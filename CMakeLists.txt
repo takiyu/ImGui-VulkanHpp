@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8.2)
+cmake_minimum_required(VERSION 3.11)
 
 # ------------------------------------------------------------------------------
 # -------------------------------- Check parent --------------------------------
@@ -18,6 +18,11 @@ set(IMGUIVKHPP_FIND_VULKAN ON CACHE BOOL "Try to Find External Vulkan.")
 set(IMGUIVKHPP_USE_INTERNAL_IMGUI ON CACHE BOOL "Use Internal ImGui.")
 set(IMGUIVKHPP_EXTERNAL_INCLUDE "" CACHE STRING "External include paths.")
 set(IMGUIVKHPP_EXTERNAL_LIBRARY "" CACHE STRING "External libraries.")
+
+# Handle option dependency
+if (IMGUIVKHPP_BUILD_EXAMPLES)
+    set(IMGUIVKHPP_FIND_VULKAN OFF)  # No need to find Vulkan
+endif()
 
 # External includes/libraries
 list(APPEND IMGUIVKHPP_INCLUDE ${IMGUIVKHPP_EXTERNAL_INCLUDE})
@@ -98,8 +103,8 @@ endfunction(setup_target_simple)
 # ------------------------------------------------------------------------------
 # Vulkan
 if (IMGUIVKHPP_FIND_VULKAN)
-    message(STATUS "Try to search Vulkan")
-    find_package(Vulkan REQUIRED)
+    message(STATUS "Try to find Vulkan")
+    find_package(Vulkan)
     if (${Vulkan_FOUND})
         list(APPEND IMGUIVKHPP_INCLUDE ${Vulkan_INCLUDE_DIRS})
         list(APPEND IMGUIVKHPP_LIBRARY ${Vulkan_LIBRARY})
@@ -108,6 +113,7 @@ endif()
 
 # ImGui
 if (IMGUIVKHPP_USE_INTERNAL_IMGUI)
+    message(STATUS "Use internal ImGui")
     set(IMGUI_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
     add_library(imgui ${IMGUI_PATH}/imgui.cpp
                       ${IMGUI_PATH}/imgui_draw.cpp
@@ -119,6 +125,20 @@ if (IMGUIVKHPP_USE_INTERNAL_IMGUI)
 endif()
 
 if (IMGUIVKHPP_BUILD_EXAMPLES)
+    # Vulkan Wrapper
+    message(STATUS "Setup VulkanWrapper for examples")
+    set(VKW_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third_party/VulkanWrapper)
+    include(FetchContent)
+    FetchContent_Declare(VulkanWrapper
+                         GIT_REPOSITORY https://github.com/takiyu/VulkanWrapper
+                         SOURCE_DIR ${VKW_PATH})
+    FetchContent_Populate(VulkanWrapper)
+    set(VKW_BUILD_EXAMPLES OFF CACHE BOOL "")
+    set(VKW_LINK_DYNAMIC_VK ON CACHE BOOL "")
+    add_subdirectory(${VKW_PATH})
+    list(APPEND IMGUIVKHPP_INCLUDE ${VKW_INCLUDE})
+    list(APPEND IMGUIVKHPP_LIBRARY ${VKW_LIBRARY})
+    list(APPEND IMGUIVKHPP_DEFINE ${VKW_DEFINE})
 endif()
 
 # ------------------------------------------------------------------------------
@@ -127,9 +147,10 @@ endif()
 # ImGui-VulkanHpp
 list(APPEND IMGUIVKHPP_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_library(imgui_vkhpp
-    # ${CMAKE_CURRENT_SOURCE_DIR}/src/imgui_vkhpp.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/imgui_vkhpp_impl.cpp
 )
 setup_target(imgui_vkhpp "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}")
+add_definitions(${IMGUIVKHPP_DEFINE})
 list(APPEND IMGUIVKHPP_LIBRARY imgui_vkhpp)
 
 # ------------------------------------------------------------------------------
@@ -138,10 +159,14 @@ list(APPEND IMGUIVKHPP_LIBRARY imgui_vkhpp)
 if(HAS_PARENT)
     set(IMGUIVKHPP_INCLUDE ${IMGUIVKHPP_INCLUDE} PARENT_SCOPE)
     set(IMGUIVKHPP_LIBRARY ${IMGUIVKHPP_LIBRARY} PARENT_SCOPE)
+    set(IMGUIVKHPP_DEFINE ${IMGUIVKHPP_DEFINE} PARENT_SCOPE)
 endif()
 
 # ------------------------------------------------------------------------------
 # ---------------------------------- Examples ----------------------------------
 # ------------------------------------------------------------------------------
 if (IMGUIVKHPP_BUILD_EXAMPLES)
+    add_executable(main
+        ${CMAKE_CURRENT_SOURCE_DIR}/example/main_glfw.cpp)
+    setup_target(main "${VKW_INCLUDE}" "${VKW_LIBRARY}")
 endif()
