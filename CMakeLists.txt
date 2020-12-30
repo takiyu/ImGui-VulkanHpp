@@ -139,6 +139,9 @@ if (IMGUIVKHPP_BUILD_EXAMPLES)
     list(APPEND IMGUIVKHPP_INCLUDE ${VKW_INCLUDE})
     list(APPEND IMGUIVKHPP_LIBRARY ${VKW_LIBRARY})
     list(APPEND IMGUIVKHPP_DEFINE ${VKW_DEFINE})
+
+    # GLM
+    list(APPEND VKW_INCLUDE ${VKW_PATH}/third_party/glm)
 endif()
 
 # ------------------------------------------------------------------------------
@@ -166,7 +169,7 @@ endif()
 # ---------------------------------- Examples ----------------------------------
 # ------------------------------------------------------------------------------
 if (IMGUIVKHPP_BUILD_EXAMPLES)
-    add_executable(main
+    add_executable(main_glfw
         ${CMAKE_CURRENT_SOURCE_DIR}/example/main_glfw.cpp)
-    setup_target(main "${VKW_INCLUDE}" "${VKW_LIBRARY}")
+    setup_target(main_glfw "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}")
 endif()
