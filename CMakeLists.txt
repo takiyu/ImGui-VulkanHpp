@@ -16,6 +16,7 @@ endif()
 set(IMGUIVKHPP_BUILD_EXAMPLES ON CACHE BOOL "Build examples")
 set(IMGUIVKHPP_FIND_VULKAN ON CACHE BOOL "Try to Find External Vulkan.")
 set(IMGUIVKHPP_USE_INTERNAL_IMGUI ON CACHE BOOL "Use Internal ImGui.")
+set(IMGUIVKHPP_USE_INTERNAL_IMGUI_GLFW_BACKEND ON CACHE BOOL "Use GLFW backend")
 set(IMGUIVKHPP_EXTERNAL_INCLUDE "" CACHE STRING "External include paths.")
 set(IMGUIVKHPP_EXTERNAL_LIBRARY "" CACHE STRING "External libraries.")
 
@@ -115,12 +116,19 @@ endif()
 if (IMGUIVKHPP_USE_INTERNAL_IMGUI)
     message(STATUS "Use internal ImGui")
     set(IMGUI_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
-    add_library(imgui ${IMGUI_PATH}/imgui.cpp
+    set(IMGUI_SOURCES ${IMGUI_PATH}/imgui.cpp
                       ${IMGUI_PATH}/imgui_draw.cpp
                       ${IMGUI_PATH}/imgui_tables.cpp
-                      ${IMGUI_PATH}/imgui_widgets.cpp)
+                      ${IMGUI_PATH}/imgui_widgets.cpp
+                      ${IMGUI_PATH}/imgui_demo.cpp)
+    if (IMGUIVKHPP_USE_INTERNAL_IMGUI_GLFW_BACKEND)
+        message(STATUS "  With GLFW backend")
+        list(APPEND IMGUI_SOURCES ${IMGUI_PATH}/backends/imgui_impl_glfw.cpp)
+    endif()
+    add_library(imgui ${IMGUI_SOURCES})
     setup_target_simple(imgui "${IMGUI_PATH}" "")
-    list(APPEND IMGUIVKHPP_INCLUDE ${IMGUI_PATH})
+    list(APPEND IMGUIVKHPP_INCLUDE ${IMGUI_PATH}
+                                   ${IMGUI_PATH}/backends)
     list(APPEND IMGUIVKHPP_LIBRARY imgui)
 endif()
 
@@ -150,7 +158,7 @@ endif()
 # ImGui-VulkanHpp
 list(APPEND IMGUIVKHPP_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_library(imgui_vkhpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/imgui_vkhpp_impl.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/imgui_impl_vulkanhpp.cpp
 )
 setup_target(imgui_vkhpp "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}")
 add_definitions(${IMGUIVKHPP_DEFINE})
@@ -170,6 +178,6 @@ endif()
 # ------------------------------------------------------------------------------
 if (IMGUIVKHPP_BUILD_EXAMPLES)
     add_executable(main_glfw
-        ${CMAKE_CURRENT_SOURCE_DIR}/example/main_glfw.cpp)
+                   ${CMAKE_CURRENT_SOURCE_DIR}/example/main_glfw.cpp)
     setup_target(main_glfw "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}")
 endif()

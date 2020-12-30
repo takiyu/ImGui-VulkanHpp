@@ -2,6 +2,8 @@
 
 BEGIN_VKW_SUPPRESS_WARNING
 #include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkanhpp.h>
 
 #include <glm/geometric.hpp>
 #include <glm/glm.hpp>
@@ -52,10 +54,6 @@ struct UniformBuffer {
 // -----------------------------------------------------------------------------
 class RotatedMVPC {
 public:
-    RotatedMVPC(const vk::Extent2D& screen_size) {
-        resize(screen_size);
-    }
-
     void resize(const vk::Extent2D& screen_size) {
         m_aspect = static_cast<float>(screen_size.width) /
                    static_cast<float>(screen_size.height);
@@ -201,12 +199,14 @@ int main(int argc, char const* argv[]) {
                                     {nullptr, depth_img_pack}, swapchain_pack);
     // Command buffer
     auto n_cmd_bufs = static_cast<uint32_t>(frame_buffer_packs.size());
-    auto cmd_bufs_pack =
+    auto cube_cmd_bufs_pack =
+            vkw::CreateCommandBuffersPack(device, queue_family_idx, n_cmd_bufs);
+    auto imgui_cmd_bufs_pack =
             vkw::CreateCommandBuffersPack(device, queue_family_idx, n_cmd_bufs);
 
     // Record commands
     for (uint32_t cmd_idx = 0; cmd_idx < n_cmd_bufs; cmd_idx++) {
-        auto& cmd_buf = cmd_bufs_pack->cmd_bufs[cmd_idx];
+        auto& cmd_buf = cube_cmd_bufs_pack->cmd_bufs[cmd_idx];
         vkw::ResetCommand(cmd_buf);
         vkw::BeginCommand(cmd_buf);
 
@@ -233,10 +233,24 @@ int main(int argc, char const* argv[]) {
     }
 
     // -------------------------------------------------------------------------
+    // ----------------------- Setup Dear ImGui context ------------------------
+    // -------------------------------------------------------------------------
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    (void)io;
+    ImGui::StyleColorsDark();
+
+    // Setup Platform/Renderer backends
+    ImGui_ImplGlfw_InitForVulkan(window.get(), true);
+    ImGui_ImplVulkanHpp_Init(physical_device, *device);
+
+    // -------------------------------------------------------------------------
     // ------------------------------- Main Loop -------------------------------
     // -------------------------------------------------------------------------
-    RotatedMVPC mvpc_generator(swapchain_pack->size);
-    while (glfwWindowShouldClose(window.get())) {
+    RotatedMVPC mvpc_generator;
+    mvpc_generator.resize(swapchain_pack->size);
+    while (!glfwWindowShouldClose(window.get())) {
         // Update uniform buffer
         auto mvpc_mat = mvpc_generator.next();
         vkw::SendToDevice(device, uniform_buf_pack, &mvpc_mat[0],
@@ -246,22 +260,50 @@ int main(int argc, char const* argv[]) {
         auto img_acquired_semaphore = vkw::CreateSemaphore(device);
         uint32_t curr_img_idx = vkw::AcquireNextImage(
                 device, swapchain_pack, img_acquired_semaphore, nullptr);
-        auto& cmd_buf = cmd_bufs_pack->cmd_bufs[curr_img_idx];
+        // Get frame buffer and command buffers
+        auto& frame_buffer = frame_buffer_packs[curr_img_idx]->frame_buffer;
+        auto& cube_cmd_buf = cube_cmd_bufs_pack->cmd_bufs[curr_img_idx];
+        auto& imgui_cmd_buf = imgui_cmd_bufs_pack->cmd_bufs[curr_img_idx];
 
-        // Draw
-        auto draw_fence = vkw::CreateFence(device);
-        vkw::QueueSubmit(queues[0], cmd_buf, draw_fence,
+        // New frame of ImGui
+        ImGui_ImplVulkanHpp_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        // Create ImGui window
+        ImGui::ShowDemoWindow();
+        // Render ImGui
+        ImGui::Render();
+        ImDrawData* draw_data = ImGui::GetDrawData();
+        ImGui_ImplVulkanHpp_RenderDrawData(draw_data, imgui_cmd_buf.get(),
+                                           frame_buffer.get());
+
+        // Submit
+        auto draw_cube_semaphore = vkw::CreateSemaphore(device);
+        vkw::QueueSubmit(queues[0], cube_cmd_buf, nullptr,
                          {{img_acquired_semaphore,
                            vk::PipelineStageFlagBits::eColorAttachmentOutput}},
-                         {});
+                         {draw_cube_semaphore});
+        auto draw_imgui_semaphore = vkw::CreateSemaphore(device);
+        auto draw_imgui_fence = vkw::CreateFence(device);
+        vkw::QueueSubmit(queues[0], imgui_cmd_buf, draw_imgui_fence,
+                         {{draw_cube_semaphore,
+                           vk::PipelineStageFlagBits::eColorAttachmentOutput}},
+                         {draw_imgui_semaphore});
+
         // Present
-        vkw::QueuePresent(queues[0], swapchain_pack, curr_img_idx);
-        vkw::WaitForFences(device, {draw_fence});
+        vkw::QueuePresent(queues[0], swapchain_pack, curr_img_idx,
+                          {draw_imgui_semaphore});
+        vkw::WaitForFences(device, {draw_imgui_fence});
 
         // Window update
         vkw::PrintFps();
         glfwPollEvents();
     }
+
+    // Clean up ImGui
+    ImGui_ImplVulkanHpp_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 
     return 0;
 }
