@@ -242,7 +242,7 @@ int main(int argc, char const* argv[]) {
 
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForVulkan(window.get(), true);
-    ImGui_ImplVulkanHpp_Init(physical_device, *device);
+    ImGui_ImplVulkanHpp_Init(physical_device, device, surface_format);
 
     // -------------------------------------------------------------------------
     // ------------------------------- Main Loop -------------------------------
@@ -273,8 +273,8 @@ int main(int argc, char const* argv[]) {
         // Render ImGui
         ImGui::Render();
         ImDrawData* draw_data = ImGui::GetDrawData();
-        ImGui_ImplVulkanHpp_RenderDrawData(draw_data, imgui_cmd_buf.get(),
-                                           frame_buffer.get());
+        ImGui_ImplVulkanHpp_RenderDrawData(draw_data, imgui_cmd_buf,
+                                           frame_buffer);
 
         // Submit
         auto draw_cube_semaphore = vkw::CreateSemaphore(device);

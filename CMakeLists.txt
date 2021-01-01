@@ -14,15 +14,15 @@ endif()
 # ----------------------------------- Options ----------------------------------
 # ------------------------------------------------------------------------------
 set(IMGUIVKHPP_BUILD_EXAMPLES ON CACHE BOOL "Build examples")
-set(IMGUIVKHPP_FIND_VULKAN ON CACHE BOOL "Try to Find External Vulkan.")
 set(IMGUIVKHPP_USE_INTERNAL_IMGUI ON CACHE BOOL "Use Internal ImGui.")
 set(IMGUIVKHPP_USE_INTERNAL_IMGUI_GLFW_BACKEND ON CACHE BOOL "Use GLFW backend")
+set(IMGUIVKHPP_USE_INTERNAL_VKW ON CACHE BOOL "Use Internal Vulkan Wrapper.")
 set(IMGUIVKHPP_EXTERNAL_INCLUDE "" CACHE STRING "External include paths.")
 set(IMGUIVKHPP_EXTERNAL_LIBRARY "" CACHE STRING "External libraries.")
 
 # Handle option dependency
 if (IMGUIVKHPP_BUILD_EXAMPLES)
-    set(IMGUIVKHPP_FIND_VULKAN OFF)  # No need to find Vulkan
+    set(IMGUIVKHPP_USE_INTERNAL_VKW ON)  # Use internal VKW for examples
 endif()
 
 # External includes/libraries
@@ -102,16 +102,6 @@ endfunction(setup_target_simple)
 # ------------------------------------------------------------------------------
 # --------------------------- Third Party Libraries ----------------------------
 # ------------------------------------------------------------------------------
-# Vulkan
-if (IMGUIVKHPP_FIND_VULKAN)
-    message(STATUS "Try to find Vulkan")
-    find_package(Vulkan)
-    if (${Vulkan_FOUND})
-        list(APPEND IMGUIVKHPP_INCLUDE ${Vulkan_INCLUDE_DIRS})
-        list(APPEND IMGUIVKHPP_LIBRARY ${Vulkan_LIBRARY})
-    endif()
-endif()
-
 # ImGui
 if (IMGUIVKHPP_USE_INTERNAL_IMGUI)
     message(STATUS "Use internal ImGui")
@@ -132,9 +122,10 @@ if (IMGUIVKHPP_USE_INTERNAL_IMGUI)
     list(APPEND IMGUIVKHPP_LIBRARY imgui)
 endif()
 
-if (IMGUIVKHPP_BUILD_EXAMPLES)
+# Vulkan Wrapper
+if (IMGUIVKHPP_USE_INTERNAL_VKW)
     # Vulkan Wrapper
-    message(STATUS "Setup VulkanWrapper for examples")
+    message(STATUS "Setup Internal VulkanWrapper")
     set(VKW_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third_party/VulkanWrapper)
     include(FetchContent)
     FetchContent_Declare(VulkanWrapper
@@ -147,7 +138,9 @@ if (IMGUIVKHPP_BUILD_EXAMPLES)
     list(APPEND IMGUIVKHPP_INCLUDE ${VKW_INCLUDE})
     list(APPEND IMGUIVKHPP_LIBRARY ${VKW_LIBRARY})
     list(APPEND IMGUIVKHPP_DEFINE ${VKW_DEFINE})
+endif()
 
+if (IMGUIVKHPP_BUILD_EXAMPLES)
     # GLM
     list(APPEND VKW_INCLUDE ${VKW_PATH}/third_party/glm)
 endif()
