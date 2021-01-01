@@ -3,6 +3,7 @@
 #include <bits/stdint-uintn.h>
 
 #include <iostream>
+#include <tuple>
 
 #include "vulkan/vulkan.hpp"
 
@@ -15,6 +16,18 @@ struct Context {
     vk::PhysicalDevice physical_device;
     vk::Device device;
 
+    vk::UniqueImage font_img;
+    vk::UniqueDeviceMemory font_dev_mem;
+    vk::UniqueImageView font_img_view;
+    vk::UniqueSampler font_sampler;
+
+    vk::UniqueBuffer unif_buf;
+    vk::UniqueDeviceMemory unif_dev_mem;
+
+    vk::UniqueDescriptorSet desc_set;
+    vk::UniqueDescriptorSetLayout desc_set_layout;
+    vk::UniqueDescriptorPool desc_pool;
+
     size_t vtx_size = 0;
     size_t idx_size = 0;
     vk::UniqueBuffer vtx_buf;
@@ -26,7 +39,20 @@ struct Context {
 // Global Context
 Context g_ctx;
 
-}  // anonymous namespace
+// -----------------------------------------------------------------------------
+// ---------------------------------- Shaders ----------------------------------
+// -----------------------------------------------------------------------------
+const std::vector<uint32_t> VERT_SPRV = {
+#include "shaders/simple.vert.spv"  // Load uint32_t string directly
+};
+const std::vector<uint32_t> FRAG_SPRV = {
+#include "shaders/simple.frag.spv"  // Load uint32_t string directly
+};
+
+struct UniformBuffer {
+    float scale[2];
+    float shift[2];
+};
 
 // -----------------------------------------------------------------------------
 // ------------------------------ Vulkan Utility -------------------------------
@@ -79,8 +105,8 @@ auto CreateHostVisibBuffer(size_t buf_size,
 
 uint8_t* MapDeviceMem(const vk::UniqueDeviceMemory& dev_mem, size_t n_bytes) {
     // Map
-    uint8_t* dev_p =
-            static_cast<uint8_t*>(g_ctx.device.mapMemory(dev_mem.get(), 0, n_bytes));
+    uint8_t* dev_p = static_cast<uint8_t*>(
+            g_ctx.device.mapMemory(dev_mem.get(), 0, n_bytes));
     return dev_p;
 }
 
@@ -89,7 +115,106 @@ void UnmapDeviceMem(const vk::UniqueDeviceMemory& dev_mem) {
     g_ctx.device.unmapMemory(dev_mem.get());
 }
 
-void BeginCommand(const vk::CommandBuffer &cmd_buf,
+void SendToDevice(const vk::UniqueDeviceMemory& dev_mem, size_t n_bytes,
+                  void* src_p) {
+    // Map
+    uint8_t* dst_p = MapDeviceMem(dev_mem, n_bytes);
+    // Copy
+    memcpy(dst_p, src_p, n_bytes);
+    // Unmap
+    UnmapDeviceMem(dev_mem);
+}
+
+// void SendToDevice() {
+// }
+
+auto CreateDeviceImage(const vk::Extent2D& size, const vk::Format& format) {
+    // Create image
+    auto ret_img = g_ctx.device.createImageUnique(
+            {vk::ImageCreateFlags(), vk::ImageType::e2D, format,
+             vk::Extent3D(size, 1), 1, 1, vk::SampleCountFlagBits::e1,
+             vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eSampled,
+             vk::SharingMode::eExclusive, 0, nullptr,
+             vk::ImageLayout::eUndefined});
+
+    // Create device memory
+    auto mem_req = g_ctx.device.getImageMemoryRequirements(*ret_img);
+    auto type_idx =
+            ObtainMemTypeIdx(mem_req, vk::MemoryPropertyFlagBits::eDeviceLocal);
+    auto ret_dev_mem =
+            g_ctx.device.allocateMemoryUnique({mem_req.size, type_idx});
+
+    // Bind memory
+    g_ctx.device.bindImageMemory(ret_img.get(), ret_dev_mem.get(), 0);
+
+    // Create image view
+    const vk::ComponentMapping COMP_MAPPING(
+            vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eG,
+            vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eA);
+    const vk::ImageSubresourceRange SUBRES_RANGE(
+            vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+    auto ret_view = g_ctx.device.createImageViewUnique(
+            {vk::ImageViewCreateFlags(), ret_img.get(), vk::ImageViewType::e2D,
+             format, COMP_MAPPING, SUBRES_RANGE});
+
+    // Create sampler
+    auto ret_sampler = g_ctx.device.createSamplerUnique(
+            {vk::SamplerCreateFlags(), vk::Filter::eLinear, vk::Filter::eLinear,
+             vk::SamplerMipmapMode::eLinear, vk::SamplerAddressMode::eRepeat,
+             vk::SamplerAddressMode::eRepeat, vk::SamplerAddressMode::eRepeat,
+             0.f, false, 16.f, false, vk::CompareOp::eNever, 0.f, 1.f,
+             vk::BorderColor::eFloatOpaqueBlack});
+
+    return std::make_tuple(std::move(ret_img), std::move(ret_dev_mem),
+                           std::move(ret_view), std::move(ret_sampler));
+}
+
+auto CreateSimpleDescSet(const vk::UniqueBuffer& unif_buf,
+                         const vk::UniqueSampler& tex_sampler,
+                         const vk::UniqueImageView& tex_img_view) {
+    // Parse into raw array of bindings, pool sizes
+    std::vector<vk::DescriptorSetLayoutBinding> bindings_raw = {
+            {0, vk::DescriptorType::eUniformBufferDynamic, 1,
+             vk::ShaderStageFlagBits::eVertex},
+            {1, vk::DescriptorType::eCombinedImageSampler, 1,
+             vk::ShaderStageFlagBits::eFragment}};
+    std::vector<vk::DescriptorPoolSize> poolsizes_raw = {
+            {vk::DescriptorType::eUniformBufferDynamic, 1},
+            {vk::DescriptorType::eCombinedImageSampler, 1}};
+
+    // Create DescriptorSetLayout
+    const uint32_t N_BINDINGS = 2;
+    const uint32_t DESC_CNT_SUM = 2;
+    auto desc_set_layout = g_ctx.device.createDescriptorSetLayoutUnique(
+            {vk::DescriptorSetLayoutCreateFlags(), N_BINDINGS,
+             bindings_raw.data()});
+    // Create DescriptorPool
+    auto desc_pool = g_ctx.device.createDescriptorPoolUnique(
+            {vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, DESC_CNT_SUM,
+             N_BINDINGS, poolsizes_raw.data()});
+    // Create DescriptorSet
+    auto desc_sets = g_ctx.device.allocateDescriptorSetsUnique(
+            {*desc_pool, 1, &*desc_set_layout});
+    auto& desc_set = desc_sets[0];
+
+    // Parse into write descriptor arrays
+    std::vector<vk::DescriptorBufferInfo> desc_buf_info_vecs = {
+            {*unif_buf, 0, VK_WHOLE_SIZE}};
+    std::vector<vk::DescriptorImageInfo> desc_img_info_vecs = {
+            {*tex_sampler, *tex_img_view, vk::ImageLayout::eGeneral}};
+    std::vector<vk::WriteDescriptorSet> write_desc_sets = {
+            {*desc_set, 0, 0, 1, vk::DescriptorType::eUniformBufferDynamic,
+             nullptr, desc_buf_info_vecs.data(), nullptr},
+            {*desc_set, 1, 0, 1, vk::DescriptorType::eCombinedImageSampler,
+             desc_img_info_vecs.data(), nullptr, nullptr}};
+    // Write descriptor set
+    g_ctx.device.updateDescriptorSets(write_desc_sets, nullptr);
+
+    return std::make_tuple(std::move(desc_set_layout), std::move(desc_pool),
+                           std::move(desc_set));
+}
+
+void BeginCommand(const vk::CommandBuffer& cmd_buf,
                   bool one_time_submit = true) {
     // Create begin flags
     vk::CommandBufferUsageFlags flags;
@@ -100,15 +225,21 @@ void BeginCommand(const vk::CommandBuffer &cmd_buf,
     cmd_buf.begin({flags});
 }
 
-void EndCommand(const vk::CommandBuffer &cmd_buf) {
+void EndCommand(const vk::CommandBuffer& cmd_buf) {
     // End
     cmd_buf.end();
 }
 
-void ResetCommand(const vk::CommandBuffer &cmd_buf) {
+void ResetCommand(const vk::CommandBuffer& cmd_buf) {
     // Reset
     cmd_buf.reset(vk::CommandBufferResetFlags());
 }
+
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+
+}  // anonymous namespace
 
 // -----------------------------------------------------------------------------
 // -------------------------------- Interfaces ---------------------------------
@@ -123,13 +254,50 @@ IMGUI_IMPL_API bool ImGui_ImplVulkanHpp_Init(
     ImGuiIO& io = ImGui::GetIO();
     io.BackendRendererName = "imgui_impl_vulkanhpp";
 
-    // Create font texture (TODO)
+    // Create font texture
     uint8_t* pixels = nullptr;
     int32_t width = 0, height = 0;
     io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
-    size_t upload_size = width * height * 4;
+    // Create Texture
+    std::tie(g_ctx.font_img, g_ctx.unif_dev_mem, g_ctx.font_img_view,
+             g_ctx.font_sampler) =
+            CreateDeviceImage({width, height}, vk::Format::eR8G8B8A8Unorm);
+
     //     io.Fonts->TexID = (ImTextureID)static_cast<intptr_t>(100);
     //     io.Fonts->TexID = (ImTextureID)(intptr_t)g_FontImage;
+
+    // Create Uniform Buffer
+    std::tie(g_ctx.unif_buf, g_ctx.unif_dev_mem) = CreateHostVisibBuffer(
+            sizeof(UniformBuffer), vk::BufferUsageFlagBits::eUniformBuffer);
+
+    // Create Descriptor Sets (for vertex shader and fragment shader)
+    std::tie(g_ctx.desc_set_layout, g_ctx.desc_pool, g_ctx.desc_set) =
+            CreateSimpleDescSet(g_ctx.unif_buf, g_ctx.font_sampler,
+                                g_ctx.font_img_view);
+
+    //     vkw::AddAttachientDesc(
+    //             render_pass_pack, surface_format,
+    //             vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
+    //             vk::ImageLayout::ePresentSrcKHR);
+    //     vkw::AddAttachientDesc(render_pass_pack, DEPTH_FORMAT,
+    //                            vk::AttachmentLoadOp::eClear,
+    //                            vk::AttachmentStoreOp::eDontCare,
+    //                            vk::ImageLayout::eDepthStencilAttachmentOptimal);
+    //     // Subpass
+    //     vkw::AddSubpassDesc(render_pass_pack, {},
+    //                         {{0, vk::ImageLayout::eColorAttachmentOptimal}},
+    //                         {1,
+    //                         vk::ImageLayout::eDepthStencilAttachmentOptimal});
+    //     vkw::UpdateRenderPass(device, render_pass_pack);
+    //     // Pipeline
+    //     vkw::PipelineInfo pipeline_info;
+    //     pipeline_info.color_blend_infos.resize(1);
+    //     auto pipeline_pack = vkw::CreateGraphicsPipeline(
+    //             device, {vert_shader_module_pack, frag_shader_module_pack},
+    //             {{0, sizeof(Vertex), vk::VertexInputRate::eVertex}},
+    //             {{0, 0, vk::Format::eR32G32B32A32Sfloat, 0},
+    //              {1, 0, vk::Format::eR32G32B32A32Sfloat, 16}},
+    //             pipeline_info, {desc_set_pack}, render_pass_pack);
 
     return true;
 }
@@ -142,9 +310,8 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_Shutdown() {
 IMGUI_IMPL_API void ImGui_ImplVulkanHpp_NewFrame() {}
 
 IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
-                ImDrawData* draw_data,
-                const vk::CommandBuffer& dst_cmd_buf,
-                const vk::Framebuffer& dst_frame_buffer) {
+        ImDrawData* draw_data, const vk::CommandBuffer& dst_cmd_buf,
+        const vk::Framebuffer& dst_frame_buffer) {
     // Compute framebuffer size
     auto fb_width_f = draw_data->DisplaySize.x * draw_data->FramebufferScale.x;
     auto fb_height_f = draw_data->DisplaySize.y * draw_data->FramebufferScale.y;
@@ -188,65 +355,77 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
         UnmapDeviceMem(g_ctx.idx_dev_mem);
     }
 
-//     // Setup desired Vulkan state
-//     ImGui_ImplVulkan_SetupRenderState(draw_data, pipeline, command_buffer, rb, fb_width, fb_height);
-// 
-//     // Will project scissor/clipping rectangles into framebuffer space
-//     ImVec2 clip_off = draw_data->DisplayPos;         // (0,0) unless using multi-viewports
-//     ImVec2 clip_scale = draw_data->FramebufferScale; // (1,1) unless using retina display which are often (2,2)
-// 
-//     // Render command lists
-//     // (Because we merged all buffers into a single one, we maintain our own offset into them)
-//     int global_vtx_offset = 0;
-//     int global_idx_offset = 0;
-//     for (int n = 0; n < draw_data->CmdListsCount; n++)
-//     {
-//         const ImDrawList* cmd_list = draw_data->CmdLists[n];
-//         for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
-//         {
-//             const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-//             if (pcmd->UserCallback != NULL)
-//             {
-//                 // User callback, registered via ImDrawList::AddCallback()
-//                 // (ImDrawCallback_ResetRenderState is a special callback value used by the user to request the renderer to reset render state.)
-//                 if (pcmd->UserCallback == ImDrawCallback_ResetRenderState)
-//                     ImGui_ImplVulkan_SetupRenderState(draw_data, pipeline, command_buffer, rb, fb_width, fb_height);
-//                 else
-//                     pcmd->UserCallback(cmd_list, pcmd);
-//             }
-//             else
-//             {
-//                 // Project scissor/clipping rectangles into framebuffer space
-//                 ImVec4 clip_rect;
-//                 clip_rect.x = (pcmd->ClipRect.x - clip_off.x) * clip_scale.x;
-//                 clip_rect.y = (pcmd->ClipRect.y - clip_off.y) * clip_scale.y;
-//                 clip_rect.z = (pcmd->ClipRect.z - clip_off.x) * clip_scale.x;
-//                 clip_rect.w = (pcmd->ClipRect.w - clip_off.y) * clip_scale.y;
-// 
-//                 if (clip_rect.x < fb_width && clip_rect.y < fb_height && clip_rect.z >= 0.0f && clip_rect.w >= 0.0f)
-//                 {
-//                     // Negative offsets are illegal for vkCmdSetScissor
-//                     if (clip_rect.x < 0.0f)
-//                         clip_rect.x = 0.0f;
-//                     if (clip_rect.y < 0.0f)
-//                         clip_rect.y = 0.0f;
-// 
-//                     // Apply scissor/clipping rectangle
-//                     VkRect2D scissor;
-//                     scissor.offset.x = (int32_t)(clip_rect.x);
-//                     scissor.offset.y = (int32_t)(clip_rect.y);
-//                     scissor.extent.width = (uint32_t)(clip_rect.z - clip_rect.x);
-//                     scissor.extent.height = (uint32_t)(clip_rect.w - clip_rect.y);
-//                     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-// 
-//                     // Draw
-//                     vkCmdDrawIndexed(command_buffer, pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
-//                 }
-//             }
-//         }
-//         global_idx_offset += cmd_list->IdxBuffer.Size;
-//         global_vtx_offset += cmd_list->VtxBuffer.Size;
-//     }
+    //     // Setup desired Vulkan state
+    //     ImGui_ImplVulkan_SetupRenderState(draw_data, pipeline,
+    //     command_buffer, rb, fb_width, fb_height);
+    //
+    //     // Will project scissor/clipping rectangles into framebuffer space
+    //     ImVec2 clip_off = draw_data->DisplayPos;         // (0,0) unless
+    //     using multi-viewports ImVec2 clip_scale =
+    //     draw_data->FramebufferScale; // (1,1) unless using retina display
+    //     which are often (2,2)
+    //
+    //     // Render command lists
+    //     // (Because we merged all buffers into a single one, we maintain our
+    //     own offset into them) int global_vtx_offset = 0; int
+    //     global_idx_offset = 0; for (int n = 0; n < draw_data->CmdListsCount;
+    //     n++)
+    //     {
+    //         const ImDrawList* cmd_list = draw_data->CmdLists[n];
+    //         for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
+    //         {
+    //             const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
+    //             if (pcmd->UserCallback != NULL)
+    //             {
+    //                 // User callback, registered via
+    //                 ImDrawList::AddCallback()
+    //                 // (ImDrawCallback_ResetRenderState is a special callback
+    //                 value used by the user to request the renderer to reset
+    //                 render state.) if (pcmd->UserCallback ==
+    //                 ImDrawCallback_ResetRenderState)
+    //                     ImGui_ImplVulkan_SetupRenderState(draw_data,
+    //                     pipeline, command_buffer, rb, fb_width, fb_height);
+    //                 else
+    //                     pcmd->UserCallback(cmd_list, pcmd);
+    //             }
+    //             else
+    //             {
+    //                 // Project scissor/clipping rectangles into framebuffer
+    //                 space ImVec4 clip_rect; clip_rect.x = (pcmd->ClipRect.x -
+    //                 clip_off.x) * clip_scale.x; clip_rect.y =
+    //                 (pcmd->ClipRect.y - clip_off.y) * clip_scale.y;
+    //                 clip_rect.z = (pcmd->ClipRect.z - clip_off.x) *
+    //                 clip_scale.x; clip_rect.w = (pcmd->ClipRect.w -
+    //                 clip_off.y) * clip_scale.y;
+    //
+    //                 if (clip_rect.x < fb_width && clip_rect.y < fb_height &&
+    //                 clip_rect.z >= 0.0f && clip_rect.w >= 0.0f)
+    //                 {
+    //                     // Negative offsets are illegal for vkCmdSetScissor
+    //                     if (clip_rect.x < 0.0f)
+    //                         clip_rect.x = 0.0f;
+    //                     if (clip_rect.y < 0.0f)
+    //                         clip_rect.y = 0.0f;
+    //
+    //                     // Apply scissor/clipping rectangle
+    //                     VkRect2D scissor;
+    //                     scissor.offset.x = (int32_t)(clip_rect.x);
+    //                     scissor.offset.y = (int32_t)(clip_rect.y);
+    //                     scissor.extent.width = (uint32_t)(clip_rect.z -
+    //                     clip_rect.x); scissor.extent.height =
+    //                     (uint32_t)(clip_rect.w - clip_rect.y);
+    //                     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+    //
+    //                     // Draw
+    //                     vkCmdDrawIndexed(command_buffer, pcmd->ElemCount, 1,
+    //                     pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset
+    //                     + global_vtx_offset, 0);
+    //                 }
+    //             }
+    //         }
+    //         global_idx_offset += cmd_list->IdxBuffer.Size;
+    //         global_vtx_offset += cmd_list->VtxBuffer.Size;
+    //     }
 
     ResetCommand(dst_cmd_buf);
     BeginCommand(dst_cmd_buf);

@@ -23,13 +23,12 @@ END_VKW_SUPPRESS_WARNING
 // -----------------------------------------------------------------------------
 const std::string VERT_SOURCE = R"(
 #version 460
-    layout(binding = 0) uniform UniformBuffer {
+layout (binding = 0) uniform UniformBuffer {
     mat4 mvp;
-}
-uniform_buf;
-layout(location = 0) in vec4 pos;
-layout(location = 1) in vec4 col;
-layout(location = 0) out vec4 vtx_col;
+} uniform_buf;
+layout (location = 0) in vec4 pos;
+layout (location = 1) in vec4 col;
+layout (location = 0) out vec4 vtx_col;
 void main() {
     gl_Position = uniform_buf.mvp * pos;
     vtx_col = col;
@@ -39,7 +38,7 @@ void main() {
 const std::string FRAG_SOURCE = R"(
 #version 460
 layout (location = 0) in vec4 vtx_col;
-layout(location = 0) out vec4 frag_col;
+layout (location = 0) out vec4 frag_col;
 void main() {
     frag_col = vtx_col;
 }
