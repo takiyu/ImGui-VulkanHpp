@@ -242,7 +242,7 @@ int main(int argc, char const* argv[]) {
 
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForVulkan(window.get(), true);
-    ImGui_ImplVulkanHpp_Init(physical_device, device, surface_format);
+    ImGui_ImplVulkanHpp_Init(physical_device, device);
 
     // -------------------------------------------------------------------------
     // ------------------------------- Main Loop -------------------------------
@@ -259,8 +259,8 @@ int main(int argc, char const* argv[]) {
         auto img_acquired_semaphore = vkw::CreateSemaphore(device);
         uint32_t curr_img_idx = vkw::AcquireNextImage(
                 device, swapchain_pack, img_acquired_semaphore, nullptr);
-        // Get frame buffer and command buffers
-        auto& frame_buffer = frame_buffer_packs[curr_img_idx]->frame_buffer;
+        auto& swapchain_img = swapchain_pack->imgs[curr_img_idx];
+        // Get  and command buffers
         auto& cube_cmd_buf = cube_cmd_bufs_pack->cmd_bufs[curr_img_idx];
         auto& imgui_cmd_buf = imgui_cmd_bufs_pack->cmd_bufs[curr_img_idx];
 
@@ -274,7 +274,9 @@ int main(int argc, char const* argv[]) {
         ImGui::Render();
         ImDrawData* draw_data = ImGui::GetDrawData();
         ImGui_ImplVulkanHpp_RenderDrawData(draw_data, imgui_cmd_buf,
-                                           frame_buffer);
+                                           swapchain_img->view.get(),
+                                           swapchain_img->view_format,
+                                           swapchain_img->view_size);
 
         // Submit
         auto draw_cube_semaphore = vkw::CreateSemaphore(device);

@@ -7,3 +7,5 @@
 .ccls-cache
 
 build*
+
+third_party/VulkanWrapper
