@@ -13,7 +13,7 @@ namespace {
 // -----------------------------------------------------------------------------
 const std::string VERT_SOURCE = R"(
 #version 460
-layout (binding = 0) uniform UniformBuffer {
+layout (binding = 0) uniform UnifBuf {
     vec2 scale;
     vec2 shift;
 } uniform_buf;
@@ -40,7 +40,7 @@ void main() {
 }
 )";
 
-struct UniformBuffer {
+struct UnifBuf {
     float scale[2];
     float shift[2];
 };
@@ -56,7 +56,7 @@ struct Context {
     vkw::ShaderModulePackPtr frag_shader_module_pack;
 
     vkw::BufferPackPtr unif_buf_pack;
-    UniformBuffer unif_buf;
+    UnifBuf unif_buf;
 
     uint8_t* font_pixel_p = nullptr;
     size_t font_pixel_size = 0;
@@ -128,10 +128,10 @@ IMGUI_IMPL_API bool ImGui_ImplVulkanHpp_Init(
             device, FRAG_SOURCE, vk::ShaderStageFlagBits::eFragment);
 
     // Create Uniform Buffer
-    g_ctx.unif_buf_pack = vkw::CreateBufferPack(
-            physical_device, device, sizeof(UniformBuffer),
-            vk::BufferUsageFlagBits::eUniformBuffer,
-            vkw::HOST_VISIB_COHER_PROPS);
+    g_ctx.unif_buf_pack =
+            vkw::CreateBufferPack(physical_device, device, sizeof(UnifBuf),
+                                  vk::BufferUsageFlagBits::eUniformBuffer,
+                                  vkw::HOST_VISIB_COHER_PROPS);
 
     // Create font texture
     int32_t width = 0, height = 0;
@@ -285,14 +285,12 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
     }
 
     // Update uniform buffer
-    g_ctx.unif_buf.scale[0] = 2.0f / draw_data->DisplaySize.x;
-    g_ctx.unif_buf.scale[1] = 2.0f / draw_data->DisplaySize.y;
-    g_ctx.unif_buf.shift[0] =
-            -1.0f - draw_data->DisplayPos.x * g_ctx.unif_buf.scale[0];
-    g_ctx.unif_buf.shift[1] =
-            -1.0f - draw_data->DisplayPos.y * g_ctx.unif_buf.scale[1];
-    vkw::SendToDevice(device, g_ctx.unif_buf_pack, &g_ctx.unif_buf,
-                      sizeof(UniformBuffer));
+    auto& unif_buf = g_ctx.unif_buf;
+    unif_buf.scale[0] = 2.f / draw_data->DisplaySize.x;
+    unif_buf.scale[1] = 2.f / draw_data->DisplaySize.y;
+    unif_buf.shift[0] = -1.f - draw_data->DisplayPos.x * unif_buf.scale[0];
+    unif_buf.shift[1] = -1.f - draw_data->DisplayPos.y * unif_buf.scale[1];
+    vkw::SendToDevice(device, g_ctx.unif_buf_pack, &unif_buf, sizeof(UnifBuf));
 
     // Create frame buffer
     g_ctx.frame_buffer_pack = CreateFrameBuffer(device, g_ctx.render_pass_pack,
@@ -311,7 +309,6 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
     auto index_type = (sizeof(ImDrawIdx) == 2) ? vk::IndexType::eUint16 :
                                                  vk::IndexType::eUint32;
     vkw::CmdBindIndexBuffer(dst_cmd_buf, g_ctx.idx_buf_pack, 0, index_type);
-
     vkw::CmdSetViewport(dst_cmd_buf, dst_img_size);
 
     const ImVec2& clip_off = draw_data->DisplayPos;
@@ -329,11 +326,11 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
                     pcmd->UserCallback(cmd_list, pcmd);
                 }
             } else {
-                ImVec4 clip_rect;
-                clip_rect.x = (pcmd->ClipRect.x - clip_off.x) * clip_scale.x;
-                clip_rect.y = (pcmd->ClipRect.y - clip_off.y) * clip_scale.y;
-                clip_rect.z = (pcmd->ClipRect.z - clip_off.x) * clip_scale.x;
-                clip_rect.w = (pcmd->ClipRect.w - clip_off.y) * clip_scale.y;
+                ImVec4 clip_rect = {
+                        (pcmd->ClipRect.x - clip_off.x) * clip_scale.x,
+                        (pcmd->ClipRect.y - clip_off.y) * clip_scale.y,
+                        (pcmd->ClipRect.z - clip_off.x) * clip_scale.x,
+                        (pcmd->ClipRect.w - clip_off.y) * clip_scale.y};
 
                 if (clip_rect.x < fb_width && clip_rect.y < fb_height &&
                     clip_rect.z >= 0.0f && clip_rect.w >= 0.0f) {
@@ -350,14 +347,12 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
                     vkw::CmdSetScissor(dst_cmd_buf, scissor);
 
                     // Draw
-                    vkw::CmdDrawIndexed(
-                            dst_cmd_buf, static_cast<uint32_t>(pcmd->ElemCount),
-                            1,
-                            static_cast<uint32_t>(pcmd->IdxOffset +
-                                                  global_idx_offset),
-                            static_cast<int32_t>(pcmd->VtxOffset +
-                                                 global_vtx_offset),
-                            0);
+                    vkw::CmdDrawIndexed(dst_cmd_buf,
+                                        static_cast<uint32_t>(pcmd->ElemCount),
+                                        1, pcmd->IdxOffset + global_idx_offset,
+                                        static_cast<int32_t>(pcmd->VtxOffset +
+                                                             global_vtx_offset),
+                                        0);
                 }
             }
         }

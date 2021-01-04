@@ -21,6 +21,11 @@ END_VKW_SUPPRESS_WARNING
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
+const std::string FONT_PATH = "../third_party/imgui/misc/fonts/Roboto-Medium.ttf";
+
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 const std::string VERT_SOURCE = R"(
 #version 460
 layout (binding = 0) uniform UniformBuffer {
@@ -237,7 +242,7 @@ int main(int argc, char const* argv[]) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    io.Fonts->AddFontFromFileTTF("../third_party/imgui/misc/fonts/Roboto-Medium.ttf", 16.0f);
+    io.Fonts->AddFontFromFileTTF(FONT_PATH.c_str(), 16.0f);
     ImGui::StyleColorsDark();
 
     // Setup Platform/Renderer backends
