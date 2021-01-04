@@ -141,7 +141,6 @@ IMGUI_IMPL_API bool ImGui_ImplVulkanHpp_Init(
     g_ctx.font_img_pack = vkw::CreateImagePack(
             physical_device, device, vk::Format::eR8G8B8A8Unorm,
             {static_cast<uint32_t>(width), static_cast<uint32_t>(height)}, 1,
-
             vk::ImageUsageFlagBits::eSampled |
                     vk::ImageUsageFlagBits::eTransferDst);
     g_ctx.font_tex_pack = vkw::CreateTexturePack(g_ctx.font_img_pack, device);
@@ -269,8 +268,10 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
         vkw::UpdateRenderPass(device, g_ctx.render_pass_pack);
 
         // Create pipeline
+        vkw::PipelineColorBlendAttachInfo pipeine_blend_info;
+        pipeine_blend_info.blend_enable = true;
         vkw::PipelineInfo pipeline_info;
-        pipeline_info.color_blend_infos.resize(1);
+        pipeline_info.color_blend_infos = {pipeine_blend_info};
         pipeline_info.depth_test_enable = false;
         pipeline_info.face_culling = vk::CullModeFlagBits::eNone;
         g_ctx.pipeline_pack = vkw::CreateGraphicsPipeline(
