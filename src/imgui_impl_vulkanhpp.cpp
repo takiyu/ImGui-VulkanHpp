@@ -9,6 +9,14 @@
 namespace {
 
 // -----------------------------------------------------------------------------
+// --------------------------------- Constants ---------------------------------
+// -----------------------------------------------------------------------------
+const std::array<float, 4> CLEAR_COLOR = {0.2f, 0.2f, 1.0f, 1.0f};
+const std::vector<vk::ClearValue> CLEAR_VALS = {{CLEAR_COLOR}};
+constexpr auto IDX_TYPE = (sizeof(ImDrawIdx) == 2) ? vk::IndexType::eUint16 :
+                                                     vk::IndexType::eUint32;
+
+// -----------------------------------------------------------------------------
 // ---------------------------------- Shaders ----------------------------------
 // -----------------------------------------------------------------------------
 const std::string VERT_SOURCE = R"(
@@ -187,8 +195,6 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
         vkw::EndCommand(dst_cmd_buf);  // Empty command
         return;
     }
-    auto fb_width = static_cast<uint32_t>(fb_width_f);
-    auto fb_height = static_cast<uint32_t>(fb_height_f);
 
     auto&& physical_device = *g_ctx.physical_device_p;
     auto&& device = *g_ctx.device_p;
@@ -297,18 +303,13 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
                                                 {dst_img_view}, dst_img_size);
 
     // Record commands
-    const std::array<float, 4> CLEAR_COLOR = {0.2f, 0.2f, 1.0f, 1.0f};
-    const std::vector<vk::ClearValue> CLEAR_VALS = {{CLEAR_COLOR}};
     vkw::CmdBeginRenderPass(dst_cmd_buf, g_ctx.render_pass_pack,
                             g_ctx.frame_buffer_pack, CLEAR_VALS);
     vkw::CmdBindPipeline(dst_cmd_buf, g_ctx.pipeline_pack);
-    const std::vector<uint32_t> dynamic_offsets = {0};
     vkw::CmdBindDescSets(dst_cmd_buf, g_ctx.pipeline_pack,
-                         {g_ctx.desc_set_pack}, dynamic_offsets);
+                         {g_ctx.desc_set_pack}, {0});
     vkw::CmdBindVertexBuffers(dst_cmd_buf, 0, {g_ctx.vtx_buf_pack});
-    auto index_type = (sizeof(ImDrawIdx) == 2) ? vk::IndexType::eUint16 :
-                                                 vk::IndexType::eUint32;
-    vkw::CmdBindIndexBuffer(dst_cmd_buf, g_ctx.idx_buf_pack, 0, index_type);
+    vkw::CmdBindIndexBuffer(dst_cmd_buf, g_ctx.idx_buf_pack, 0, IDX_TYPE);
     vkw::CmdSetViewport(dst_cmd_buf, dst_img_size);
 
     const ImVec2& clip_off = draw_data->DisplayPos;
@@ -332,8 +333,8 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
                         (pcmd->ClipRect.z - clip_off.x) * clip_scale.x,
                         (pcmd->ClipRect.w - clip_off.y) * clip_scale.y};
 
-                if (clip_rect.x < fb_width && clip_rect.y < fb_height &&
-                    clip_rect.z >= 0.0f && clip_rect.w >= 0.0f) {
+                if (clip_rect.x < fb_width_f && clip_rect.y < fb_height_f &&
+                    clip_rect.z >= 0.f && clip_rect.w >= 0.f) {
                     // Negative offsets are illegal for vkCmdSetScissor
                     clip_rect.x = std::max(clip_rect.x, 0.f);
                     clip_rect.y = std::max(clip_rect.y, 0.f);
