@@ -1,48 +1,12 @@
 #include "imgui_impl_vulkanhpp.h"
 
+#include <bits/stdint-uintn.h>
 #include <vkw/vkw.h>
 
 #include <iostream>
 #include <tuple>
 
 namespace {
-
-// -----------------------------------------------------------------------------
-// ---------------------------------- Context ----------------------------------
-// -----------------------------------------------------------------------------
-struct Context {
-    const vk::PhysicalDevice* physical_device_p;
-    const vk::UniqueDevice* device_p;
-
-    vkw::ShaderModulePackPtr vert_shader_module_pack;
-    vkw::ShaderModulePackPtr frag_shader_module_pack;
-
-    vkw::BufferPackPtr unif_buf_pack;
-
-    uint8_t* font_pixel_p = nullptr;
-    size_t font_pixel_size = 0;
-    vkw::ImagePackPtr font_img_pack;
-    vkw::TexturePackPtr font_tex_pack;
-    bool is_font_tex_sent = false;
-    vkw::BufferPackPtr font_buf_pack;
-
-    vkw::DescSetPackPtr desc_set_pack;
-    vkw::WriteDescSetPackPtr write_desc_set_pack;
-
-    vk::Format img_format = vk::Format::eUndefined;
-    vk::Extent2D img_size = {0, 0};
-    vkw::RenderPassPackPtr render_pass_pack;
-    vkw::PipelinePackPtr pipeline_pack;
-    vkw::FrameBufferPackPtr frame_buffer_pack;
-
-    size_t vtx_size = 0;
-    vkw::BufferPackPtr vtx_buf_pack;
-    size_t idx_size = 0;
-    vkw::BufferPackPtr idx_buf_pack;
-};
-
-// Global Context
-Context g_ctx;
 
 // -----------------------------------------------------------------------------
 // ---------------------------------- Shaders ----------------------------------
@@ -80,6 +44,44 @@ struct UniformBuffer {
     float scale[2];
     float shift[2];
 };
+
+// -----------------------------------------------------------------------------
+// ---------------------------------- Context ----------------------------------
+// -----------------------------------------------------------------------------
+struct Context {
+    const vk::PhysicalDevice* physical_device_p;
+    const vk::UniqueDevice* device_p;
+
+    vkw::ShaderModulePackPtr vert_shader_module_pack;
+    vkw::ShaderModulePackPtr frag_shader_module_pack;
+
+    vkw::BufferPackPtr unif_buf_pack;
+    UniformBuffer unif_buf;
+
+    uint8_t* font_pixel_p = nullptr;
+    size_t font_pixel_size = 0;
+    vkw::ImagePackPtr font_img_pack;
+    vkw::TexturePackPtr font_tex_pack;
+    bool is_font_tex_sent = false;
+    vkw::BufferPackPtr font_buf_pack;
+
+    vkw::DescSetPackPtr desc_set_pack;
+    vkw::WriteDescSetPackPtr write_desc_set_pack;
+
+    vk::Format img_format = vk::Format::eUndefined;
+    vk::Extent2D img_size = {0, 0};
+    vkw::RenderPassPackPtr render_pass_pack;
+    vkw::PipelinePackPtr pipeline_pack;
+    vkw::FrameBufferPackPtr frame_buffer_pack;
+
+    size_t vtx_size = 0;
+    vkw::BufferPackPtr vtx_buf_pack;
+    size_t idx_size = 0;
+    vkw::BufferPackPtr idx_buf_pack;
+};
+
+// Global Context
+Context g_ctx;
 
 // -----------------------------------------------------------------------------
 // ------------------------------ Vulkan Utility -------------------------------
@@ -270,118 +272,100 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
         vkw::PipelineInfo pipeline_info;
         pipeline_info.color_blend_infos.resize(1);
         pipeline_info.depth_test_enable = false;
+        pipeline_info.face_culling = vk::CullModeFlagBits::eNone;
         g_ctx.pipeline_pack = vkw::CreateGraphicsPipeline(
                 device,
                 {g_ctx.vert_shader_module_pack, g_ctx.frag_shader_module_pack},
-                {{0, sizeof(float) * 8, vk::VertexInputRate::eVertex}},
-                {{0, 0, vk::Format::eR32G32Sfloat, 0},
-                 {1, 0, vk::Format::eR32G32Sfloat, sizeof(float) * 2},
-                 {2, 0, vk::Format::eR32G32B32A32Sfloat, sizeof(float) * 4}},
+                {{0, sizeof(ImDrawVert), vk::VertexInputRate::eVertex}},
+                {{0, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, pos)},
+                 {1, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, uv)},
+                 {2, 0, vk::Format::eR8G8B8A8Unorm, offsetof(ImDrawVert, col)}},
                 pipeline_info, {g_ctx.desc_set_pack}, g_ctx.render_pass_pack);
     }
 
+    // Update uniform buffer
+    g_ctx.unif_buf.scale[0] = 2.0f / draw_data->DisplaySize.x;
+    g_ctx.unif_buf.scale[1] = 2.0f / draw_data->DisplaySize.y;
+    g_ctx.unif_buf.shift[0] =
+            -1.0f - draw_data->DisplayPos.x * g_ctx.unif_buf.scale[0];
+    g_ctx.unif_buf.shift[1] =
+            -1.0f - draw_data->DisplayPos.y * g_ctx.unif_buf.scale[1];
+    vkw::SendToDevice(device, g_ctx.unif_buf_pack, &g_ctx.unif_buf,
+                      sizeof(UniformBuffer));
+
+    // Create frame buffer
     g_ctx.frame_buffer_pack = CreateFrameBuffer(device, g_ctx.render_pass_pack,
                                                 {dst_img_view}, dst_img_size);
 
-    //     vk::Rect2D render_area = {{0, 0}, {fb_width, fb_height}};
-
+    // Record commands
     const std::array<float, 4> CLEAR_COLOR = {0.2f, 0.2f, 1.0f, 1.0f};
     const std::vector<vk::ClearValue> CLEAR_VALS = {{CLEAR_COLOR}};
     vkw::CmdBeginRenderPass(dst_cmd_buf, g_ctx.render_pass_pack,
                             g_ctx.frame_buffer_pack, CLEAR_VALS);
     vkw::CmdBindPipeline(dst_cmd_buf, g_ctx.pipeline_pack);
-
     const std::vector<uint32_t> dynamic_offsets = {0};
     vkw::CmdBindDescSets(dst_cmd_buf, g_ctx.pipeline_pack,
                          {g_ctx.desc_set_pack}, dynamic_offsets);
-
     vkw::CmdBindVertexBuffers(dst_cmd_buf, 0, {g_ctx.vtx_buf_pack});
     auto index_type = (sizeof(ImDrawIdx) == 2) ? vk::IndexType::eUint16 :
                                                  vk::IndexType::eUint32;
     vkw::CmdBindIndexBuffer(dst_cmd_buf, g_ctx.idx_buf_pack, 0, index_type);
 
-    //     vkw::CmdSetViewport(dst_cmd_buf, {0, 0, fb_width, fb_height});
-    //     vkw::CmdSetScissor(dst_cmd_buf, render_area);
-    vkw::CmdSetViewport(dst_cmd_buf,
-                        {0, 0, dst_img_size.width, dst_img_size.height});
-    vkw::CmdSetScissor(dst_cmd_buf, dst_img_size);
+    vkw::CmdSetViewport(dst_cmd_buf, dst_img_size);
 
-    vkw::CmdDrawIndexed(dst_cmd_buf, idx_size / 3);
-    //     vkw::CmdDrawIndexed(dst_cmd_buf, idx_size);
+    const ImVec2& clip_off = draw_data->DisplayPos;
+    const ImVec2& clip_scale = draw_data->FramebufferScale;
+    uint32_t global_vtx_offset = 0;
+    uint32_t global_idx_offset = 0;
+    for (int n = 0; n < draw_data->CmdListsCount; n++) {
+        const ImDrawList* cmd_list = draw_data->CmdLists[n];
+        for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++) {
+            const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
+            if (pcmd->UserCallback != nullptr) {
+                if (pcmd->UserCallback == ImDrawCallback_ResetRenderState) {
+                    // TODO: Reset render state
+                } else {
+                    pcmd->UserCallback(cmd_list, pcmd);
+                }
+            } else {
+                ImVec4 clip_rect;
+                clip_rect.x = (pcmd->ClipRect.x - clip_off.x) * clip_scale.x;
+                clip_rect.y = (pcmd->ClipRect.y - clip_off.y) * clip_scale.y;
+                clip_rect.z = (pcmd->ClipRect.z - clip_off.x) * clip_scale.x;
+                clip_rect.w = (pcmd->ClipRect.w - clip_off.y) * clip_scale.y;
+
+                if (clip_rect.x < fb_width && clip_rect.y < fb_height &&
+                    clip_rect.z >= 0.0f && clip_rect.w >= 0.0f) {
+                    // Negative offsets are illegal for vkCmdSetScissor
+                    clip_rect.x = std::max(clip_rect.x, 0.f);
+                    clip_rect.y = std::max(clip_rect.y, 0.f);
+
+                    // Apply scissor/clipping rectangle
+                    vk::Rect2D scissor = {
+                            {static_cast<int32_t>(clip_rect.x),
+                             static_cast<int32_t>(clip_rect.y)},
+                            {static_cast<uint32_t>(clip_rect.z - clip_rect.x),
+                             static_cast<uint32_t>(clip_rect.w - clip_rect.y)}};
+                    vkw::CmdSetScissor(dst_cmd_buf, scissor);
+
+                    // Draw
+                    vkw::CmdDrawIndexed(
+                            dst_cmd_buf, static_cast<uint32_t>(pcmd->ElemCount),
+                            1,
+                            static_cast<uint32_t>(pcmd->IdxOffset +
+                                                  global_idx_offset),
+                            static_cast<int32_t>(pcmd->VtxOffset +
+                                                 global_vtx_offset),
+                            0);
+                }
+            }
+        }
+
+        global_idx_offset += static_cast<uint32_t>(cmd_list->IdxBuffer.Size);
+        global_vtx_offset += static_cast<uint32_t>(cmd_list->VtxBuffer.Size);
+    }
 
     vkw::CmdEndRenderPass(dst_cmd_buf);
-
-    //     // Setup desired Vulkan state
-    //     ImGui_ImplVulkan_SetupRenderState(draw_data, pipeline,
-    //     command_buffer, rb, fb_width, fb_height);
-    //
-    //     // Will project scissor/clipping rectangles into framebuffer space
-    //     ImVec2 clip_off = draw_data->DisplayPos;         // (0,0) unless
-    //     using multi-viewports ImVec2 clip_scale =
-    //     draw_data->FramebufferScale; // (1,1) unless using retina display
-    //     which are often (2,2)
-    //
-    //     // Render command lists
-    //     // (Because we merged all buffers into a single one, we maintain our
-    //     own offset into them) int global_vtx_offset = 0; int
-    //     global_idx_offset = 0; for (int n = 0; n < draw_data->CmdListsCount;
-    //     n++)
-    //     {
-    //         const ImDrawList* cmd_list = draw_data->CmdLists[n];
-    //         for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
-    //         {
-    //             const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-    //             if (pcmd->UserCallback != NULL)
-    //             {
-    //                 // User callback, registered via
-    //                 ImDrawList::AddCallback()
-    //                 // (ImDrawCallback_ResetRenderState is a special callback
-    //                 value used by the user to request the renderer to reset
-    //                 render state.) if (pcmd->UserCallback ==
-    //                 ImDrawCallback_ResetRenderState)
-    //                     ImGui_ImplVulkan_SetupRenderState(draw_data,
-    //                     pipeline, command_buffer, rb, fb_width, fb_height);
-    //                 else
-    //                     pcmd->UserCallback(cmd_list, pcmd);
-    //             }
-    //             else
-    //             {
-    //                 // Project scissor/clipping rectangles into framebuffer
-    //                 space ImVec4 clip_rect; clip_rect.x = (pcmd->ClipRect.x -
-    //                 clip_off.x) * clip_scale.x; clip_rect.y =
-    //                 (pcmd->ClipRect.y - clip_off.y) * clip_scale.y;
-    //                 clip_rect.z = (pcmd->ClipRect.z - clip_off.x) *
-    //                 clip_scale.x; clip_rect.w = (pcmd->ClipRect.w -
-    //                 clip_off.y) * clip_scale.y;
-    //
-    //                 if (clip_rect.x < fb_width && clip_rect.y < fb_height &&
-    //                 clip_rect.z >= 0.0f && clip_rect.w >= 0.0f)
-    //                 {
-    //                     // Negative offsets are illegal for vkCmdSetScissor
-    //                     if (clip_rect.x < 0.0f)
-    //                         clip_rect.x = 0.0f;
-    //                     if (clip_rect.y < 0.0f)
-    //                         clip_rect.y = 0.0f;
-    //
-    //                     // Apply scissor/clipping rectangle
-    //                     VkRect2D scissor;
-    //                     scissor.offset.x = (int32_t)(clip_rect.x);
-    //                     scissor.offset.y = (int32_t)(clip_rect.y);
-    //                     scissor.extent.width = (uint32_t)(clip_rect.z -
-    //                     clip_rect.x); scissor.extent.height =
-    //                     (uint32_t)(clip_rect.w - clip_rect.y);
-    //                     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-    //
-    //                     // Draw
-    //                     vkCmdDrawIndexed(command_buffer, pcmd->ElemCount, 1,
-    //                     pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset
-    //                     + global_vtx_offset, 0);
-    //                 }
-    //             }
-    //         }
-    //         global_idx_offset += cmd_list->IdxBuffer.Size;
-    //         global_vtx_offset += cmd_list->VtxBuffer.Size;
-    //     }
 
     vkw::EndCommand(dst_cmd_buf);
     return;

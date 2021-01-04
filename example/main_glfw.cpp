@@ -237,7 +237,7 @@ int main(int argc, char const* argv[]) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    (void)io;
+    io.Fonts->AddFontFromFileTTF("../third_party/imgui/misc/fonts/Roboto-Medium.ttf", 16.0f);
     ImGui::StyleColorsDark();
 
     // Setup Platform/Renderer backends
