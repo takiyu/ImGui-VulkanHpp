@@ -247,7 +247,7 @@ int main(int argc, char const* argv[]) {
 
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForVulkan(window.get(), true);
-    ImGui_ImplVulkanHpp_Init(physical_device, device);
+    ImGui_ImplVulkanHpp_Init();
 
     // -------------------------------------------------------------------------
     // ------------------------------- Main Loop -------------------------------
@@ -270,7 +270,7 @@ int main(int argc, char const* argv[]) {
         auto& imgui_cmd_buf = imgui_cmd_bufs_pack->cmd_bufs[curr_img_idx];
 
         // New frame of ImGui
-        ImGui_ImplVulkanHpp_NewFrame();
+        ImGui_ImplVulkanHpp_NewFrame(physical_device, device);
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
         // Create ImGui window

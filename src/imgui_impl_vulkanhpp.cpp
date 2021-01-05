@@ -116,16 +116,38 @@ void UnmapDeviceMem(const vk::UniqueDevice& device,
 // -----------------------------------------------------------------------------
 // -------------------------------- Interfaces ---------------------------------
 // -----------------------------------------------------------------------------
-IMGUI_IMPL_API bool ImGui_ImplVulkanHpp_Init(
-        const vk::PhysicalDevice& physical_device,
-        const vk::UniqueDevice& device) {
-    // Set to global context
-    g_ctx.physical_device_p = &physical_device;
-    g_ctx.device_p = &device;
-
+IMGUI_IMPL_API bool ImGui_ImplVulkanHpp_Init() {
     // Set backend name
     ImGuiIO& io = ImGui::GetIO();
     io.BackendRendererName = "imgui_impl_vulkanhpp";
+
+    // Turn on fetched flag.
+    int32_t width = 0, height = 0;
+    io.Fonts->GetTexDataAsRGBA32(&g_ctx.font_pixel_p, &width, &height);
+
+    // Clear global context
+    g_ctx = {};
+
+    return true;
+}
+
+IMGUI_IMPL_API void ImGui_ImplVulkanHpp_Shutdown() {
+    // Clear global context
+    g_ctx = {};
+}
+
+IMGUI_IMPL_API void ImGui_ImplVulkanHpp_NewFrame(
+        const vk::PhysicalDevice& physical_device,
+        const vk::UniqueDevice& device) {
+    if (g_ctx.physical_device_p == &physical_device &&
+        g_ctx.device_p == &device) {
+        // Already initialized
+        return;
+    }
+
+    // Set to global context
+    g_ctx.physical_device_p = &physical_device;
+    g_ctx.device_p = &device;
 
     // Compile shaders
     vkw::GLSLCompiler glsl_compiler;
@@ -141,6 +163,7 @@ IMGUI_IMPL_API bool ImGui_ImplVulkanHpp_Init(
                                   vkw::HOST_VISIB_COHER_PROPS);
 
     // Create font texture
+    ImGuiIO& io = ImGui::GetIO();
     int32_t width = 0, height = 0;
     io.Fonts->GetTexDataAsRGBA32(&g_ctx.font_pixel_p, &width, &height);
     g_ctx.font_pixel_size = static_cast<size_t>(width * height) * 4;
@@ -167,16 +190,7 @@ IMGUI_IMPL_API bool ImGui_ImplVulkanHpp_Init(
                          {g_ctx.font_tex_pack},  // layout is still undefined.
                          {vk::ImageLayout::eShaderReadOnlyOptimal});
     vkw::UpdateDescriptorSets(device, g_ctx.write_desc_set_pack);
-
-    return true;
 }
-
-IMGUI_IMPL_API void ImGui_ImplVulkanHpp_Shutdown() {
-    // Clear global context
-    g_ctx = {};
-}
-
-IMGUI_IMPL_API void ImGui_ImplVulkanHpp_NewFrame() {}
 
 IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
         ImDrawData* draw_data, const vk::UniqueCommandBuffer& dst_cmd_buf,
