@@ -1,6 +1,5 @@
 #include "imgui_impl_vulkanhpp.h"
 
-#include <bits/stdint-uintn.h>
 #include <vkw/vkw.h>
 
 #include <iostream>
