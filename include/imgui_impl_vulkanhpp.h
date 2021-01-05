@@ -2,7 +2,6 @@
 #define IMGUI_IMPL_VULKANHPP_H_20201230
 
 #include <imgui.h>  // IMGUI_IMPL_API
-
 #include <vulkan/vulkan.hpp>
 
 IMGUI_IMPL_API bool ImGui_ImplVulkanHpp_Init(

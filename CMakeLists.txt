@@ -102,26 +102,6 @@ endfunction(setup_target_simple)
 # ------------------------------------------------------------------------------
 # --------------------------- Third Party Libraries ----------------------------
 # ------------------------------------------------------------------------------
-# ImGui
-if (IMGUIVKHPP_USE_INTERNAL_IMGUI)
-    message(STATUS "Use internal ImGui")
-    set(IMGUI_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
-    set(IMGUI_SOURCES ${IMGUI_PATH}/imgui.cpp
-                      ${IMGUI_PATH}/imgui_draw.cpp
-                      ${IMGUI_PATH}/imgui_tables.cpp
-                      ${IMGUI_PATH}/imgui_widgets.cpp
-                      ${IMGUI_PATH}/imgui_demo.cpp)
-    if (IMGUIVKHPP_USE_INTERNAL_IMGUI_GLFW_BACKEND)
-        message(STATUS "  With GLFW backend")
-        list(APPEND IMGUI_SOURCES ${IMGUI_PATH}/backends/imgui_impl_glfw.cpp)
-    endif()
-    add_library(imgui ${IMGUI_SOURCES})
-    setup_target_simple(imgui "${IMGUI_PATH}" "")
-    list(APPEND IMGUIVKHPP_INCLUDE ${IMGUI_PATH}
-                                   ${IMGUI_PATH}/backends)
-    list(APPEND IMGUIVKHPP_LIBRARY imgui)
-endif()
-
 # Vulkan Wrapper
 if (IMGUIVKHPP_USE_INTERNAL_VKW)
     # Vulkan Wrapper
@@ -140,9 +120,29 @@ if (IMGUIVKHPP_USE_INTERNAL_VKW)
     list(APPEND IMGUIVKHPP_DEFINE ${VKW_DEFINE})
 endif()
 
+# ImGui
+if (IMGUIVKHPP_USE_INTERNAL_IMGUI)
+    message(STATUS "Use internal ImGui")
+    set(IMGUI_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
+    set(IMGUI_SOURCES ${IMGUI_PATH}/imgui.cpp
+                      ${IMGUI_PATH}/imgui_draw.cpp
+                      ${IMGUI_PATH}/imgui_tables.cpp
+                      ${IMGUI_PATH}/imgui_widgets.cpp
+                      ${IMGUI_PATH}/imgui_demo.cpp)
+    if (IMGUIVKHPP_USE_INTERNAL_IMGUI_GLFW_BACKEND)
+        message(STATUS "  With GLFW backend")
+        list(APPEND IMGUI_SOURCES ${IMGUI_PATH}/backends/imgui_impl_glfw.cpp)
+    endif()
+    add_library(imgui ${IMGUI_SOURCES})
+    list(APPEND IMGUIVKHPP_INCLUDE ${IMGUI_PATH}
+                                   ${IMGUI_PATH}/backends)
+    setup_target_simple(imgui "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}")
+    list(APPEND IMGUIVKHPP_LIBRARY imgui)
+endif()
+
 if (IMGUIVKHPP_BUILD_EXAMPLES)
     # GLM
-    list(APPEND VKW_INCLUDE ${VKW_PATH}/third_party/glm)
+    list(APPEND IMGUIVKHPP_INCLUDE ${VKW_PATH}/third_party/glm)
 endif()
 
 # ------------------------------------------------------------------------------

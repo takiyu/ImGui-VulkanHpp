@@ -214,7 +214,7 @@ int main(int argc, char const* argv[]) {
         vkw::ResetCommand(cmd_buf);
         vkw::BeginCommand(cmd_buf);
 
-        const std::array<float, 4> clear_color = {0.2f, 0.2f, 0.2f, 0.2f};
+        const std::array<float, 4> clear_color = {0.2f, 0.2f, 0.2f, 1.0f};
         vkw::CmdBeginRenderPass(cmd_buf, render_pass_pack,
                                 frame_buffer_packs[cmd_idx],
                                 {vk::ClearColorValue(clear_color),
