@@ -270,6 +270,16 @@ int main(int argc, char const* argv[]) {
         auto& cube_cmd_buf = cube_cmd_bufs_pack->cmd_bufs[curr_img_idx];
         auto& imgui_cmd_buf = imgui_cmd_bufs_pack->cmd_bufs[curr_img_idx];
 
+        // Submit
+        auto draw_cube_semaphore = vkw::CreateSemaphore(device);
+        auto draw_cube_fence = vkw::CreateFence(device);
+        vkw::QueueSubmit(queues[0], cube_cmd_buf, draw_cube_fence,
+                         {{img_acquired_semaphore,
+                           vk::PipelineStageFlagBits::eColorAttachmentOutput}},
+                         {draw_cube_semaphore});
+
+        vkw::WaitForFences(device, {draw_cube_fence});
+
         // New frame of ImGui
         ImGui_ImplVulkanHpp_NewFrame(physical_device, device);
         ImGui_ImplGlfw_NewFrame();
@@ -283,12 +293,6 @@ int main(int argc, char const* argv[]) {
                 draw_data, imgui_cmd_buf, swapchain_img->view.get(),
                 swapchain_img->view_format, swapchain_img->view_size);
 
-        // Submit
-        auto draw_cube_semaphore = vkw::CreateSemaphore(device);
-        vkw::QueueSubmit(queues[0], cube_cmd_buf, nullptr,
-                         {{img_acquired_semaphore,
-                           vk::PipelineStageFlagBits::eColorAttachmentOutput}},
-                         {draw_cube_semaphore});
         auto draw_imgui_semaphore = vkw::CreateSemaphore(device);
         auto draw_imgui_fence = vkw::CreateFence(device);
         vkw::QueueSubmit(queues[0], imgui_cmd_buf, draw_imgui_fence,

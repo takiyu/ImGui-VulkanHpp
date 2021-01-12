@@ -3,6 +3,7 @@
 #include <vkw/vkw.h>
 
 #include <iostream>
+#include <map>
 #include <tuple>
 
 namespace {
@@ -74,10 +75,12 @@ struct Context {
     vkw::WriteDescSetPackPtr write_desc_set_pack;
 
     vk::Format img_format = vk::Format::eUndefined;
-    vk::Extent2D img_size = {0, 0};
+    vk::ImageLayout final_layout = vk::ImageLayout::eUndefined;
     vkw::RenderPassPackPtr render_pass_pack;
     vkw::PipelinePackPtr pipeline_pack;
-    vkw::FrameBufferPackPtr frame_buffer_pack;
+
+    using FrameBufKey = std::tuple<const vk::ImageView*, const vk::Extent2D*>;
+    std::map<FrameBufKey, vkw::FrameBufferPackPtr> frame_buf_map;
 
     size_t vtx_size = 0;
     vkw::BufferPackPtr vtx_buf_pack;
@@ -103,6 +106,218 @@ void UnmapDeviceMem(const vk::UniqueDevice& device,
                     const vkw::BufferPackPtr& buf_pack) {
     // Unmap
     device->unmapMemory(buf_pack->dev_mem_pack->dev_mem.get());
+}
+
+// -----------------------------------------------------------------------------
+// ------------------------------- ImGui Utility -------------------------------
+// -----------------------------------------------------------------------------
+ImVec2 ObtainImDrawSize(ImDrawData* draw_data) {
+    auto fb_width_f = draw_data->DisplaySize.x * draw_data->FramebufferScale.x;
+    auto fb_height_f = draw_data->DisplaySize.y * draw_data->FramebufferScale.y;
+    return {fb_width_f, fb_height_f};
+}
+
+bool UpdateVtxIdxBufs(ImDrawData* draw_data) {
+    auto&& physical_device = *g_ctx.physical_device_p;
+    auto&& device = *g_ctx.device_p;
+
+    // Create Host Visible Buffers
+    const size_t& vtx_size =
+            static_cast<size_t>(draw_data->TotalVtxCount) * sizeof(ImDrawVert);
+    const size_t& idx_size =
+            static_cast<size_t>(draw_data->TotalIdxCount) * sizeof(ImDrawIdx);
+    if (vtx_size == 0 || idx_size == 0) {
+        return false;  // Failed
+    }
+    if (vtx_size != g_ctx.vtx_size) {  // Create Vertex Buffer
+        g_ctx.vtx_size = vtx_size;
+        g_ctx.vtx_buf_pack =
+                vkw::CreateBufferPack(physical_device, device, vtx_size,
+                                      vk::BufferUsageFlagBits::eVertexBuffer,
+                                      vkw::HOST_VISIB_COHER_PROPS);
+    }
+    if (idx_size != g_ctx.idx_size) {  // Create Index Buffer
+        g_ctx.idx_size = idx_size;
+        g_ctx.idx_buf_pack =
+                vkw::CreateBufferPack(physical_device, device, idx_size,
+                                      vk::BufferUsageFlagBits::eIndexBuffer,
+                                      vkw::HOST_VISIB_COHER_PROPS);
+    }
+
+    // Send vertex/index data to GPU (TODO: Async)
+    uint8_t* vtx_dst = MapDeviceMem(device, g_ctx.vtx_buf_pack, vtx_size);
+    uint8_t* idx_dst = MapDeviceMem(device, g_ctx.idx_buf_pack, idx_size);
+    for (int n = 0; n < draw_data->CmdListsCount; n++) {
+        const ImDrawList* cmd_list = draw_data->CmdLists[n];
+        const size_t vtx_n_bytes =
+                static_cast<size_t>(cmd_list->VtxBuffer.Size) *
+                sizeof(ImDrawVert);
+        const size_t idx_n_bytes =
+                static_cast<size_t>(cmd_list->IdxBuffer.Size) *
+                sizeof(ImDrawIdx);
+        memcpy(vtx_dst, cmd_list->VtxBuffer.Data, vtx_n_bytes);
+        memcpy(idx_dst, cmd_list->IdxBuffer.Data, idx_n_bytes);
+        vtx_dst += vtx_n_bytes;
+        idx_dst += idx_n_bytes;
+    }
+    UnmapDeviceMem(device, g_ctx.vtx_buf_pack);
+    UnmapDeviceMem(device, g_ctx.idx_buf_pack);
+
+    return true;
+}
+
+void UpdateFontTex(const vk::UniqueCommandBuffer& dst_cmd_buf) {
+    if (g_ctx.is_font_tex_sent) {
+        // Release transferring resources
+        g_ctx.font_buf_pack = nullptr;
+
+        return;  // Already created
+    }
+    g_ctx.is_font_tex_sent = true;
+
+    auto&& physical_device = *g_ctx.physical_device_p;
+    auto&& device = *g_ctx.device_p;
+
+    // Create transferring buffer
+    g_ctx.font_buf_pack = vkw::CreateBufferPack(
+            physical_device, device, g_ctx.font_pixel_size,
+            vk::BufferUsageFlagBits::eTransferSrc, vkw::HOST_VISIB_COHER_PROPS);
+
+    // Send from CPU to buffer (TODO: Async)
+    SendToDevice(device, g_ctx.font_buf_pack, g_ctx.font_pixel_p,
+                 g_ctx.font_pixel_size);
+
+    // Copy from buffer to image
+    vkw::CopyBufferToImage(dst_cmd_buf, g_ctx.font_buf_pack,
+                           g_ctx.font_img_pack);
+}
+
+vkw::FrameBufferPackPtr UpdateRenderPipeline(
+        const vk::Format& dst_img_format, const vk::ImageView& dst_img_view,
+        const vk::Extent2D& dst_img_size, const vk::ImageLayout& final_layout) {
+    auto&& device = *g_ctx.device_p;
+
+    const bool needs_update = g_ctx.img_format != dst_img_format ||
+                              g_ctx.final_layout != final_layout;
+    if (needs_update) {
+        g_ctx.img_format = dst_img_format;
+        g_ctx.final_layout = final_layout;
+
+        // Create render pass
+        g_ctx.render_pass_pack = vkw::CreateRenderPassPack();
+        // Add color attachment
+        vkw::AddAttachientDesc(g_ctx.render_pass_pack, dst_img_format,
+                               vk::AttachmentLoadOp::eLoad,
+                               vk::AttachmentStoreOp::eStore, final_layout);
+        // Add subpass
+        vkw::AddSubpassDesc(g_ctx.render_pass_pack, {},
+                            {{0, vk::ImageLayout::eColorAttachmentOptimal}});
+        // Create render pass instance
+        vkw::UpdateRenderPass(device, g_ctx.render_pass_pack);
+
+        // Create pipeline
+        vkw::PipelineColorBlendAttachInfo pipeine_blend_info;
+        pipeine_blend_info.blend_enable = true;
+        vkw::PipelineInfo pipeline_info;
+        pipeline_info.color_blend_infos = {pipeine_blend_info};
+        pipeline_info.depth_test_enable = false;
+        pipeline_info.face_culling = vk::CullModeFlagBits::eNone;
+        g_ctx.pipeline_pack = vkw::CreateGraphicsPipeline(
+                device,
+                {g_ctx.vert_shader_module_pack, g_ctx.frag_shader_module_pack},
+                {{0, sizeof(ImDrawVert), vk::VertexInputRate::eVertex}},
+                {{0, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, pos)},
+                 {1, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, uv)},
+                 {2, 0, vk::Format::eR8G8B8A8Unorm, offsetof(ImDrawVert, col)}},
+                pipeline_info, {g_ctx.desc_set_pack}, g_ctx.render_pass_pack);
+    }
+
+    // Create frame buffer
+    const Context::FrameBufKey& key = {&dst_img_view, &dst_img_size};
+    auto& frame_buf = g_ctx.frame_buf_map[key];
+    if (!frame_buf || needs_update) {
+        // Create & Register
+        frame_buf = CreateFrameBuffer(device, g_ctx.render_pass_pack,
+                                      {dst_img_view}, dst_img_size);
+    }
+    return frame_buf;
+}
+
+void UpdateUnifBuf(ImDrawData* draw_data) {
+    auto&& device = *g_ctx.device_p;
+
+    // Send to uniform buffer
+    auto& unif_buf = g_ctx.unif_buf;
+    unif_buf.scale[0] = 2.f / draw_data->DisplaySize.x;
+    unif_buf.scale[1] = 2.f / draw_data->DisplaySize.y;
+    unif_buf.shift[0] = -1.f - draw_data->DisplayPos.x * unif_buf.scale[0];
+    unif_buf.shift[1] = -1.f - draw_data->DisplayPos.y * unif_buf.scale[1];
+    vkw::SendToDevice(device, g_ctx.unif_buf_pack, &unif_buf, sizeof(UnifBuf));
+}
+
+void RecordDrawCmds(const vk::UniqueCommandBuffer& dst_cmd_buf,
+                    ImDrawData* draw_data, const ImVec2& draw_size,
+                    const vkw::FrameBufferPackPtr& frame_buf) {
+    vkw::CmdBeginRenderPass(dst_cmd_buf, g_ctx.render_pass_pack, frame_buf, {});
+    vkw::CmdBindPipeline(dst_cmd_buf, g_ctx.pipeline_pack);
+    vkw::CmdBindDescSets(dst_cmd_buf, g_ctx.pipeline_pack,
+                         {g_ctx.desc_set_pack}, {0});
+    vkw::CmdBindVertexBuffers(dst_cmd_buf, 0, {g_ctx.vtx_buf_pack});
+    vkw::CmdBindIndexBuffer(dst_cmd_buf, g_ctx.idx_buf_pack, 0, IDX_TYPE);
+    vkw::CmdSetViewport(dst_cmd_buf,
+                        vk::Extent2D{frame_buf->width, frame_buf->height});
+
+    const ImVec2& clip_off = draw_data->DisplayPos;
+    const ImVec2& clip_scale = draw_data->FramebufferScale;
+    uint32_t global_vtx_offset = 0;
+    uint32_t global_idx_offset = 0;
+    for (int n = 0; n < draw_data->CmdListsCount; n++) {
+        const ImDrawList* cmd_list = draw_data->CmdLists[n];
+        for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++) {
+            const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
+            if (pcmd->UserCallback != nullptr) {
+                if (pcmd->UserCallback == ImDrawCallback_ResetRenderState) {
+                    // TODO: Reset render state
+                } else {
+                    pcmd->UserCallback(cmd_list, pcmd);
+                }
+            } else {
+                ImVec4 clip_rect = {
+                        (pcmd->ClipRect.x - clip_off.x) * clip_scale.x,
+                        (pcmd->ClipRect.y - clip_off.y) * clip_scale.y,
+                        (pcmd->ClipRect.z - clip_off.x) * clip_scale.x,
+                        (pcmd->ClipRect.w - clip_off.y) * clip_scale.y};
+
+                if (clip_rect.x < draw_size.x && clip_rect.y < draw_size.y &&
+                    0 <= clip_rect.z && 0 <= clip_rect.w) {
+                    // Negative offsets are illegal for vkCmdSetScissor
+                    clip_rect.x = std::max(clip_rect.x, 0.f);
+                    clip_rect.y = std::max(clip_rect.y, 0.f);
+
+                    // Apply scissor/clipping rectangle
+                    vk::Rect2D scissor = {
+                            {static_cast<int32_t>(clip_rect.x),
+                             static_cast<int32_t>(clip_rect.y)},
+                            {static_cast<uint32_t>(clip_rect.z - clip_rect.x),
+                             static_cast<uint32_t>(clip_rect.w - clip_rect.y)}};
+                    vkw::CmdSetScissor(dst_cmd_buf, scissor);
+
+                    // Draw
+                    vkw::CmdDrawIndexed(dst_cmd_buf,
+                                        static_cast<uint32_t>(pcmd->ElemCount),
+                                        1, pcmd->IdxOffset + global_idx_offset,
+                                        static_cast<int32_t>(pcmd->VtxOffset +
+                                                             global_vtx_offset),
+                                        0);
+                }
+            }
+        }
+
+        global_idx_offset += static_cast<uint32_t>(cmd_list->IdxBuffer.Size);
+        global_vtx_offset += static_cast<uint32_t>(cmd_list->VtxBuffer.Size);
+    }
+
+    vkw::CmdEndRenderPass(dst_cmd_buf);
 }
 
 // -----------------------------------------------------------------------------
@@ -193,187 +408,38 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_NewFrame(
 IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
         ImDrawData* draw_data, const vk::UniqueCommandBuffer& dst_cmd_buf,
         const vk::ImageView& dst_img_view, const vk::Format& dst_img_format,
-        const vk::Extent2D& dst_img_size,
-        const vk::ImageLayout& dst_img_layout) {
+        const vk::Extent2D& dst_img_size, const vk::ImageLayout& final_layout,
+        bool force_draw_mode) {
     // Reset and begin command buffer
     vkw::ResetCommand(dst_cmd_buf);
-    vkw::BeginCommand(dst_cmd_buf, true);  // once
-
-    // Compute framebuffer size
-    auto fb_width_f = draw_data->DisplaySize.x * draw_data->FramebufferScale.x;
-    auto fb_height_f = draw_data->DisplaySize.y * draw_data->FramebufferScale.y;
-    if (fb_width_f <= 0.f || fb_height_f <= 0.f) {
-        vkw::EndCommand(dst_cmd_buf);  // Empty command
-        return;
-    }
-
-    auto&& physical_device = *g_ctx.physical_device_p;
-    auto&& device = *g_ctx.device_p;
-
-    // Create Vertex Buffer
-    const size_t& vtx_size =
-            static_cast<size_t>(draw_data->TotalVtxCount) * sizeof(ImDrawVert);
-    if (vtx_size == 0) {
-        vkw::EndCommand(dst_cmd_buf);  // Empty command
-        return;
-    }
-    if (vtx_size != g_ctx.vtx_size) {
-        g_ctx.vtx_size = vtx_size;
-        g_ctx.vtx_buf_pack =
-                vkw::CreateBufferPack(physical_device, device, vtx_size,
-                                      vk::BufferUsageFlagBits::eVertexBuffer,
-                                      vkw::HOST_VISIB_COHER_PROPS);
-    }
-    // Create Index Buffer
-    const size_t& idx_size =
-            static_cast<size_t>(draw_data->TotalIdxCount) * sizeof(ImDrawIdx);
-    if (idx_size != g_ctx.idx_size) {
-        g_ctx.idx_size = idx_size;
-        g_ctx.idx_buf_pack =
-                vkw::CreateBufferPack(physical_device, device, idx_size,
-                                      vk::BufferUsageFlagBits::eIndexBuffer,
-                                      vkw::HOST_VISIB_COHER_PROPS);
-    }
-
-    // Send vertex/index data to GPU (TODO: Async)
-    uint8_t* vtx_dst = MapDeviceMem(device, g_ctx.vtx_buf_pack, vtx_size);
-    uint8_t* idx_dst = MapDeviceMem(device, g_ctx.idx_buf_pack, idx_size);
-    for (int n = 0; n < draw_data->CmdListsCount; n++) {
-        const ImDrawList* cmd_list = draw_data->CmdLists[n];
-        const size_t vtx_n_bytes =
-                static_cast<size_t>(cmd_list->VtxBuffer.Size) *
-                sizeof(ImDrawVert);
-        const size_t idx_n_bytes =
-                static_cast<size_t>(cmd_list->IdxBuffer.Size) *
-                sizeof(ImDrawIdx);
-        memcpy(vtx_dst, cmd_list->VtxBuffer.Data, vtx_n_bytes);
-        memcpy(idx_dst, cmd_list->IdxBuffer.Data, idx_n_bytes);
-        vtx_dst += vtx_n_bytes;
-        idx_dst += idx_n_bytes;
-    }
-    UnmapDeviceMem(device, g_ctx.vtx_buf_pack);
-    UnmapDeviceMem(device, g_ctx.idx_buf_pack);
+    vkw::BeginCommand(dst_cmd_buf, true);  // once command
 
     // Send font texture
-    if (!g_ctx.is_font_tex_sent) {
-        g_ctx.is_font_tex_sent = true;
-        // Create transferring buffer
-        g_ctx.font_buf_pack = vkw::CreateBufferPack(
-                physical_device, device, g_ctx.font_pixel_size,
-                vk::BufferUsageFlagBits::eTransferSrc,
-                vkw::HOST_VISIB_COHER_PROPS);
-        // Send to buffer
-        SendToDevice(device, g_ctx.font_buf_pack, g_ctx.font_pixel_p,
-                     g_ctx.font_pixel_size);
-        // Send buffer to image
-        vkw::CopyBufferToImage(dst_cmd_buf, g_ctx.font_buf_pack,
-                               g_ctx.font_img_pack);
+    UpdateFontTex(dst_cmd_buf);
+
+    // Compute framebuffer size
+    const auto draw_size = ObtainImDrawSize(draw_data);
+    if (draw_size.x <= 0.f || draw_size.y <= 0.f) {
+        vkw::EndCommand(dst_cmd_buf);  // Empty command
+        return;
     }
 
-    if (g_ctx.img_format != dst_img_format) {
-        g_ctx.img_format = dst_img_format;
-        // Create render pass
-        g_ctx.render_pass_pack = vkw::CreateRenderPassPack();
-        // Add color attachment
-        vkw::AddAttachientDesc(g_ctx.render_pass_pack, dst_img_format,
-                               vk::AttachmentLoadOp::eLoad,
-                               vk::AttachmentStoreOp::eStore, dst_img_layout);
-        // Add subpass
-        vkw::AddSubpassDesc(g_ctx.render_pass_pack, {},
-                            {{0, vk::ImageLayout::eColorAttachmentOptimal}});
-        // Create render pass instance
-        vkw::UpdateRenderPass(device, g_ctx.render_pass_pack);
-
-        // Create pipeline
-        vkw::PipelineColorBlendAttachInfo pipeine_blend_info;
-        pipeine_blend_info.blend_enable = true;
-        vkw::PipelineInfo pipeline_info;
-        pipeline_info.color_blend_infos = {pipeine_blend_info};
-        pipeline_info.depth_test_enable = false;
-        pipeline_info.face_culling = vk::CullModeFlagBits::eNone;
-        g_ctx.pipeline_pack = vkw::CreateGraphicsPipeline(
-                device,
-                {g_ctx.vert_shader_module_pack, g_ctx.frag_shader_module_pack},
-                {{0, sizeof(ImDrawVert), vk::VertexInputRate::eVertex}},
-                {{0, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, pos)},
-                 {1, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, uv)},
-                 {2, 0, vk::Format::eR8G8B8A8Unorm, offsetof(ImDrawVert, col)}},
-                pipeline_info, {g_ctx.desc_set_pack}, g_ctx.render_pass_pack);
+    // Update vertex and index buffers
+    const bool upd_buf_ret = UpdateVtxIdxBufs(draw_data);
+    if (!upd_buf_ret) {
+        vkw::EndCommand(dst_cmd_buf);  // Empty command
+        return;
     }
+
+    // Create Rendering Pipeline
+    auto frame_buf = UpdateRenderPipeline(dst_img_format, dst_img_view,
+                                          dst_img_size, final_layout);
 
     // Update uniform buffer
-    auto& unif_buf = g_ctx.unif_buf;
-    unif_buf.scale[0] = 2.f / draw_data->DisplaySize.x;
-    unif_buf.scale[1] = 2.f / draw_data->DisplaySize.y;
-    unif_buf.shift[0] = -1.f - draw_data->DisplayPos.x * unif_buf.scale[0];
-    unif_buf.shift[1] = -1.f - draw_data->DisplayPos.y * unif_buf.scale[1];
-    vkw::SendToDevice(device, g_ctx.unif_buf_pack, &unif_buf, sizeof(UnifBuf));
-
-    // Create frame buffer
-    g_ctx.frame_buffer_pack = CreateFrameBuffer(device, g_ctx.render_pass_pack,
-                                                {dst_img_view}, dst_img_size);
+    UpdateUnifBuf(draw_data);
 
     // Record commands
-    vkw::CmdBeginRenderPass(dst_cmd_buf, g_ctx.render_pass_pack,
-                            g_ctx.frame_buffer_pack, {});
-    vkw::CmdBindPipeline(dst_cmd_buf, g_ctx.pipeline_pack);
-    vkw::CmdBindDescSets(dst_cmd_buf, g_ctx.pipeline_pack,
-                         {g_ctx.desc_set_pack}, {0});
-    vkw::CmdBindVertexBuffers(dst_cmd_buf, 0, {g_ctx.vtx_buf_pack});
-    vkw::CmdBindIndexBuffer(dst_cmd_buf, g_ctx.idx_buf_pack, 0, IDX_TYPE);
-    vkw::CmdSetViewport(dst_cmd_buf, dst_img_size);
-
-    const ImVec2& clip_off = draw_data->DisplayPos;
-    const ImVec2& clip_scale = draw_data->FramebufferScale;
-    uint32_t global_vtx_offset = 0;
-    uint32_t global_idx_offset = 0;
-    for (int n = 0; n < draw_data->CmdListsCount; n++) {
-        const ImDrawList* cmd_list = draw_data->CmdLists[n];
-        for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++) {
-            const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-            if (pcmd->UserCallback != nullptr) {
-                if (pcmd->UserCallback == ImDrawCallback_ResetRenderState) {
-                    // TODO: Reset render state
-                } else {
-                    pcmd->UserCallback(cmd_list, pcmd);
-                }
-            } else {
-                ImVec4 clip_rect = {
-                        (pcmd->ClipRect.x - clip_off.x) * clip_scale.x,
-                        (pcmd->ClipRect.y - clip_off.y) * clip_scale.y,
-                        (pcmd->ClipRect.z - clip_off.x) * clip_scale.x,
-                        (pcmd->ClipRect.w - clip_off.y) * clip_scale.y};
-
-                if (clip_rect.x < fb_width_f && clip_rect.y < fb_height_f &&
-                    clip_rect.z >= 0.f && clip_rect.w >= 0.f) {
-                    // Negative offsets are illegal for vkCmdSetScissor
-                    clip_rect.x = std::max(clip_rect.x, 0.f);
-                    clip_rect.y = std::max(clip_rect.y, 0.f);
-
-                    // Apply scissor/clipping rectangle
-                    vk::Rect2D scissor = {
-                            {static_cast<int32_t>(clip_rect.x),
-                             static_cast<int32_t>(clip_rect.y)},
-                            {static_cast<uint32_t>(clip_rect.z - clip_rect.x),
-                             static_cast<uint32_t>(clip_rect.w - clip_rect.y)}};
-                    vkw::CmdSetScissor(dst_cmd_buf, scissor);
-
-                    // Draw
-                    vkw::CmdDrawIndexed(dst_cmd_buf,
-                                        static_cast<uint32_t>(pcmd->ElemCount),
-                                        1, pcmd->IdxOffset + global_idx_offset,
-                                        static_cast<int32_t>(pcmd->VtxOffset +
-                                                             global_vtx_offset),
-                                        0);
-                }
-            }
-        }
-
-        global_idx_offset += static_cast<uint32_t>(cmd_list->IdxBuffer.Size);
-        global_vtx_offset += static_cast<uint32_t>(cmd_list->VtxBuffer.Size);
-    }
-
-    vkw::CmdEndRenderPass(dst_cmd_buf);
+    RecordDrawCmds(dst_cmd_buf, draw_data, draw_size, frame_buf);
 
     vkw::EndCommand(dst_cmd_buf);
     return;
