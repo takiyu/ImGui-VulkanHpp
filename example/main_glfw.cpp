@@ -21,7 +21,8 @@ END_VKW_SUPPRESS_WARNING
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
-const std::string FONT_PATH = "../third_party/imgui/misc/fonts/Roboto-Medium.ttf";
+const std::string FONT_PATH =
+        "../third_party/imgui/misc/fonts/Roboto-Medium.ttf";
 
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
@@ -278,10 +279,9 @@ int main(int argc, char const* argv[]) {
         // Render ImGui
         ImGui::Render();
         ImDrawData* draw_data = ImGui::GetDrawData();
-        ImGui_ImplVulkanHpp_RenderDrawData(draw_data, imgui_cmd_buf,
-                                           swapchain_img->view.get(),
-                                           swapchain_img->view_format,
-                                           swapchain_img->view_size);
+        ImGui_ImplVulkanHpp_RenderDrawData(
+                draw_data, imgui_cmd_buf, swapchain_img->view.get(),
+                swapchain_img->view_format, swapchain_img->view_size);
 
         // Submit
         auto draw_cube_semaphore = vkw::CreateSemaphore(device);

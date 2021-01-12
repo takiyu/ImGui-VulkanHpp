@@ -10,8 +10,6 @@ namespace {
 // -----------------------------------------------------------------------------
 // --------------------------------- Constants ---------------------------------
 // -----------------------------------------------------------------------------
-const std::array<float, 4> CLEAR_COLOR = {0.2f, 0.2f, 1.0f, 1.0f};
-const std::vector<vk::ClearValue> CLEAR_VALS = {{CLEAR_COLOR}};
 constexpr auto IDX_TYPE = (sizeof(ImDrawIdx) == 2) ? vk::IndexType::eUint16 :
                                                      vk::IndexType::eUint32;
 
@@ -317,7 +315,7 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
 
     // Record commands
     vkw::CmdBeginRenderPass(dst_cmd_buf, g_ctx.render_pass_pack,
-                            g_ctx.frame_buffer_pack, CLEAR_VALS);
+                            g_ctx.frame_buffer_pack, {});
     vkw::CmdBindPipeline(dst_cmd_buf, g_ctx.pipeline_pack);
     vkw::CmdBindDescSets(dst_cmd_buf, g_ctx.pipeline_pack,
                          {g_ctx.desc_set_pack}, {0});
