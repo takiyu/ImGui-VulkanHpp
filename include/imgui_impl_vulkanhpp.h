@@ -14,7 +14,7 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
         ImDrawData* draw_data, const vk::UniqueCommandBuffer& dst_cmd_buf,
         const vk::ImageView& dst_img_view, const vk::Format& dst_img_format,
         const vk::Extent2D& dst_img_size,
-        const vk::ImageLayout& final_layout = vk::ImageLayout::ePresentSrcKHR,
-        const bool force_draw_mode = false);
+        const vk::ImageLayout& final_layout = vk::ImageLayout::ePresentSrcKHR);
+
 
 #endif /* end of include guard */
