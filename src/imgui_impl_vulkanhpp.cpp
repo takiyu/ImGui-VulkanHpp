@@ -1,6 +1,8 @@
-#include "imgui_impl_vulkanhpp.h"
-
 #include <vkw/vkw.h>
+
+BEGIN_VKW_SUPPRESS_WARNING
+#include "imgui_impl_vulkanhpp.h"
+END_VKW_SUPPRESS_WARNING
 
 #include <iostream>
 #include <map>
@@ -17,7 +19,27 @@ constexpr auto IDX_TYPE = (sizeof(ImDrawIdx) == 2) ? vk::IndexType::eUint16 :
 // -----------------------------------------------------------------------------
 // ---------------------------------- Shaders ----------------------------------
 // -----------------------------------------------------------------------------
-const std::string VERT_SOURCE = R"(
+const std::string BG_VERT_SOURCE = R"(
+#version 460
+layout (location = 0) out vec2 vtx_uv;
+void main() {
+    vec2 uv = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);
+    vec2 screen_pos = uv * 2.0f - 1.0f;
+    gl_Position = vec4(screen_pos, 0.0f, 1.0f);
+    vtx_uv = uv;
+}
+)";
+const std::string BG_FRAG_SOURCE = R"(
+#version 460
+layout (set = 0, binding = 0) uniform sampler2D tex;
+layout (location = 0) in vec2 vtx_uv;
+layout (location = 0) out vec4 frag_color;
+void main() {
+    frag_color = texture(tex, vtx_uv);
+}
+)";
+
+const std::string IMGUI_VERT_SOURCE = R"(
 #version 460
 layout (binding = 0) uniform UnifBuf {
     vec2 scale;
@@ -34,8 +56,7 @@ void main() {
     vtx_col = col;
 }
 )";
-
-const std::string FRAG_SOURCE = R"(
+const std::string IMGUI_FRAG_SOURCE = R"(
 #version 460
 layout (set = 0, binding = 1) uniform sampler2D tex;
 layout (location = 0) in vec2 vtx_uv;
@@ -58,8 +79,10 @@ struct Context {
     const vk::PhysicalDevice* physical_device_p;
     const vk::UniqueDevice* device_p;
 
-    vkw::ShaderModulePackPtr vert_shader_module_pack;
-    vkw::ShaderModulePackPtr frag_shader_module_pack;
+    vkw::ShaderModulePackPtr bg_vert_shader_pack;
+    vkw::ShaderModulePackPtr bg_frag_shader_pack;
+    vkw::ShaderModulePackPtr imgui_vert_shader_pack;
+    vkw::ShaderModulePackPtr imgui_frag_shader_pack;
 
     vkw::BufferPackPtr unif_buf_pack;
     UnifBuf unif_buf;
@@ -71,13 +94,21 @@ struct Context {
     bool is_font_tex_sent = false;
     vkw::BufferPackPtr font_buf_pack;
 
-    vkw::DescSetPackPtr desc_set_pack;
-    vkw::WriteDescSetPackPtr write_desc_set_pack;
+    vkw::DescSetPackPtr imgui_desc_set_pack;
+    vkw::WriteDescSetPackPtr imgui_write_desc_set_pack;
+    vkw::DescSetPackPtr bg_desc_set_pack;
+    vkw::WriteDescSetPackPtr bg_write_desc_set_pack;
 
-    vk::Format img_format = vk::Format::eUndefined;
-    vk::ImageLayout final_layout = vk::ImageLayout::eUndefined;
+    vk::UniqueSampler bg_sampler;
+
+    vk::Format dst_img_format = vk::Format::eUndefined;
+    vk::ImageLayout dst_final_layout = vk::ImageLayout::eUndefined;
+    vk::ImageView bg_img_view;
+    vk::ImageLayout bg_img_layout;
+
     vkw::RenderPassPackPtr render_pass_pack;
-    vkw::PipelinePackPtr pipeline_pack;
+    vkw::PipelinePackPtr bg_pipeline_pack;
+    vkw::PipelinePackPtr imgui_pipeline_pack;
 
     using FrameBufKey = std::tuple<const vk::ImageView*, const vk::Extent2D*>;
     std::map<FrameBufKey, vkw::FrameBufferPackPtr> frame_buf_map;
@@ -194,42 +225,84 @@ void UpdateFontTex(const vk::UniqueCommandBuffer& dst_cmd_buf) {
 
 vkw::FrameBufferPackPtr UpdateRenderPipeline(
         const vk::Format& dst_img_format, const vk::ImageView& dst_img_view,
-        const vk::Extent2D& dst_img_size, const vk::ImageLayout& final_layout) {
+        const vk::Extent2D& dst_img_size,
+        const vk::ImageLayout& dst_final_layout,
+        const vk::ImageView& bg_img_view,
+        const vk::ImageLayout& bg_img_layout) {
     auto&& device = *g_ctx.device_p;
 
-    const bool needs_update = g_ctx.img_format != dst_img_format ||
-                              g_ctx.final_layout != final_layout;
+    const bool needs_update = g_ctx.dst_img_format != dst_img_format ||
+                              g_ctx.dst_final_layout != dst_final_layout ||
+                              g_ctx.bg_img_view != bg_img_view ||
+                              g_ctx.bg_img_layout != bg_img_layout;
     if (needs_update) {
-        g_ctx.img_format = dst_img_format;
-        g_ctx.final_layout = final_layout;
+        g_ctx.dst_img_format = dst_img_format;
+        g_ctx.dst_final_layout = dst_final_layout;
+        g_ctx.bg_img_view = bg_img_view;
+        g_ctx.bg_img_layout = bg_img_layout;
+
+        if (bg_img_view) {
+            // Bind descriptor set with actual buffer (BG)
+            g_ctx.bg_write_desc_set_pack = vkw::CreateWriteDescSetPack();
+            vkw::AddWriteDescSet(
+                    g_ctx.imgui_write_desc_set_pack, g_ctx.imgui_desc_set_pack,
+                    0,
+                    {vk::DescriptorImageInfo{g_ctx.bg_sampler.get(),
+                                             bg_img_view, bg_img_layout}});
+            vkw::UpdateDescriptorSets(device, g_ctx.bg_write_desc_set_pack);
+        }
 
         // Create render pass
         g_ctx.render_pass_pack = vkw::CreateRenderPassPack();
         // Add color attachment
         vkw::AddAttachientDesc(g_ctx.render_pass_pack, dst_img_format,
                                vk::AttachmentLoadOp::eLoad,
-                               vk::AttachmentStoreOp::eStore, final_layout);
+                               vk::AttachmentStoreOp::eStore, dst_final_layout);
         // Add subpass
+        if (bg_img_view) {
+            vkw::AddSubpassDesc(
+                    g_ctx.render_pass_pack, {},
+                    {{0, vk::ImageLayout::eColorAttachmentOptimal}});
+            vkw::AddSubpassDepend(
+                    g_ctx.render_pass_pack,
+                    {0, vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                     vk::AccessFlagBits::eColorAttachmentWrite},
+                    {1, vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                     vk::AccessFlagBits::eColorAttachmentRead},
+                    vk::DependencyFlagBits::eByRegion);
+        }
         vkw::AddSubpassDesc(g_ctx.render_pass_pack, {},
                             {{0, vk::ImageLayout::eColorAttachmentOptimal}});
         // Create render pass instance
         vkw::UpdateRenderPass(device, g_ctx.render_pass_pack);
 
-        // Create pipeline
-        vkw::PipelineColorBlendAttachInfo pipeine_blend_info;
-        pipeine_blend_info.blend_enable = true;
-        vkw::PipelineInfo pipeline_info;
-        pipeline_info.color_blend_infos = {pipeine_blend_info};
-        pipeline_info.depth_test_enable = false;
-        pipeline_info.face_culling = vk::CullModeFlagBits::eNone;
-        g_ctx.pipeline_pack = vkw::CreateGraphicsPipeline(
+        if (bg_img_view) {
+            // Create pipeline (BG)
+            vkw::PipelineInfo bg_pipeline_info;
+            bg_pipeline_info.color_blend_infos.resize(1);
+            bg_pipeline_info.depth_test_enable = false;
+            auto pipeline_pack1 = vkw::CreateGraphicsPipeline(
+                    device,
+                    {g_ctx.bg_vert_shader_pack, g_ctx.bg_frag_shader_pack}, {},
+                    {}, bg_pipeline_info, {g_ctx.bg_desc_set_pack},
+                    g_ctx.render_pass_pack, 0);
+        }
+        // Create pipeline (ImGui)
+        vkw::PipelineColorBlendAttachInfo imgui_pipeine_blend_info;
+        imgui_pipeine_blend_info.blend_enable = true;
+        vkw::PipelineInfo imgui_pipeline_info;
+        imgui_pipeline_info.color_blend_infos = {imgui_pipeine_blend_info};
+        imgui_pipeline_info.depth_test_enable = false;
+        imgui_pipeline_info.face_culling = vk::CullModeFlagBits::eNone;
+        g_ctx.imgui_pipeline_pack = vkw::CreateGraphicsPipeline(
                 device,
-                {g_ctx.vert_shader_module_pack, g_ctx.frag_shader_module_pack},
+                {g_ctx.imgui_vert_shader_pack, g_ctx.imgui_frag_shader_pack},
                 {{0, sizeof(ImDrawVert), vk::VertexInputRate::eVertex}},
                 {{0, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, pos)},
                  {1, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, uv)},
                  {2, 0, vk::Format::eR8G8B8A8Unorm, offsetof(ImDrawVert, col)}},
-                pipeline_info, {g_ctx.desc_set_pack}, g_ctx.render_pass_pack);
+                imgui_pipeline_info, {g_ctx.imgui_desc_set_pack},
+                g_ctx.render_pass_pack, bg_img_view ? 1 : 0);
     }
 
     // Create frame buffer
@@ -259,9 +332,9 @@ void RecordDrawCmds(const vk::UniqueCommandBuffer& dst_cmd_buf,
                     ImDrawData* draw_data, const ImVec2& draw_size,
                     const vkw::FrameBufferPackPtr& frame_buf) {
     vkw::CmdBeginRenderPass(dst_cmd_buf, g_ctx.render_pass_pack, frame_buf, {});
-    vkw::CmdBindPipeline(dst_cmd_buf, g_ctx.pipeline_pack);
-    vkw::CmdBindDescSets(dst_cmd_buf, g_ctx.pipeline_pack,
-                         {g_ctx.desc_set_pack}, {0});
+    vkw::CmdBindPipeline(dst_cmd_buf, g_ctx.imgui_pipeline_pack);
+    vkw::CmdBindDescSets(dst_cmd_buf, g_ctx.imgui_pipeline_pack,
+                         {g_ctx.imgui_desc_set_pack}, {0});
     vkw::CmdBindVertexBuffers(dst_cmd_buf, 0, {g_ctx.vtx_buf_pack});
     vkw::CmdBindIndexBuffer(dst_cmd_buf, g_ctx.idx_buf_pack, 0, IDX_TYPE);
     vkw::CmdSetViewport(dst_cmd_buf,
@@ -354,7 +427,7 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_NewFrame(
         const vk::UniqueDevice& device) {
     if (g_ctx.physical_device_p == &physical_device &&
         g_ctx.device_p == &device) {
-        // Already initialized
+        // Already initialized -> Skip
         return;
     }
 
@@ -364,10 +437,14 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_NewFrame(
 
     // Compile shaders
     vkw::GLSLCompiler glsl_compiler;
-    g_ctx.vert_shader_module_pack = glsl_compiler.compileFromString(
-            device, VERT_SOURCE, vk::ShaderStageFlagBits::eVertex);
-    g_ctx.frag_shader_module_pack = glsl_compiler.compileFromString(
-            device, FRAG_SOURCE, vk::ShaderStageFlagBits::eFragment);
+    g_ctx.bg_vert_shader_pack = glsl_compiler.compileFromString(
+            device, BG_VERT_SOURCE, vk::ShaderStageFlagBits::eVertex);
+    g_ctx.bg_frag_shader_pack = glsl_compiler.compileFromString(
+            device, BG_FRAG_SOURCE, vk::ShaderStageFlagBits::eFragment);
+    g_ctx.imgui_vert_shader_pack = glsl_compiler.compileFromString(
+            device, IMGUI_VERT_SOURCE, vk::ShaderStageFlagBits::eVertex);
+    g_ctx.imgui_frag_shader_pack = glsl_compiler.compileFromString(
+            device, IMGUI_FRAG_SOURCE, vk::ShaderStageFlagBits::eFragment);
 
     // Create Uniform Buffer
     g_ctx.unif_buf_pack =
@@ -389,26 +466,37 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_NewFrame(
     g_ctx.font_tex_pack = vkw::CreateTexturePack(g_ctx.font_img_pack, device);
     io.Fonts->TexID = static_cast<ImTextureID>(g_ctx.font_img_pack.get());
 
-    // Descriptor set for Uniform buffer and Font texture
-    g_ctx.desc_set_pack = vkw::CreateDescriptorSetPack(
+    // Descriptor set (BG)
+    g_ctx.bg_desc_set_pack = vkw::CreateDescriptorSetPack(
+            device, {{vk::DescriptorType::eCombinedImageSampler, 1,
+                      vk::ShaderStageFlagBits::eFragment}});  // BG texture
+    // Descriptor set (ImGui)
+    g_ctx.imgui_desc_set_pack = vkw::CreateDescriptorSetPack(
             device, {{vk::DescriptorType::eUniformBufferDynamic, 1,
-                      vk::ShaderStageFlagBits::eVertex},
+                      vk::ShaderStageFlagBits::eVertex},  // Uniform buffer
                      {vk::DescriptorType::eCombinedImageSampler, 1,
-                      vk::ShaderStageFlagBits::eFragment}});
-    // Bind descriptor set with actual buffer
-    g_ctx.write_desc_set_pack = vkw::CreateWriteDescSetPack();
-    vkw::AddWriteDescSet(g_ctx.write_desc_set_pack, g_ctx.desc_set_pack, 0,
-                         {g_ctx.unif_buf_pack});
-    vkw::AddWriteDescSet(g_ctx.write_desc_set_pack, g_ctx.desc_set_pack, 1,
+                      vk::ShaderStageFlagBits::eFragment}});  // Font texture
+    // Bind descriptor set with actual buffer (ImGui)
+    g_ctx.imgui_write_desc_set_pack = vkw::CreateWriteDescSetPack();
+    vkw::AddWriteDescSet(g_ctx.imgui_write_desc_set_pack,
+                         g_ctx.imgui_desc_set_pack, 0, {g_ctx.unif_buf_pack});
+    vkw::AddWriteDescSet(g_ctx.imgui_write_desc_set_pack,
+                         g_ctx.imgui_desc_set_pack, 1,
                          {g_ctx.font_tex_pack},  // layout is still undefined.
                          {vk::ImageLayout::eShaderReadOnlyOptimal});
-    vkw::UpdateDescriptorSets(device, g_ctx.write_desc_set_pack);
+    vkw::UpdateDescriptorSets(device, g_ctx.imgui_write_desc_set_pack);
+
+    // Texture Sampler (BG)
+    g_ctx.bg_sampler = vkw::CreateSampler(device);
 }
 
 IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
         ImDrawData* draw_data, const vk::UniqueCommandBuffer& dst_cmd_buf,
         const vk::ImageView& dst_img_view, const vk::Format& dst_img_format,
-        const vk::Extent2D& dst_img_size, const vk::ImageLayout& final_layout) {
+        const vk::Extent2D& dst_img_size,
+        const vk::ImageLayout& dst_final_layout,
+        const vk::ImageView& bg_img_view,
+        const vk::ImageLayout& bg_img_layout) {
     // Reset and begin command buffer
     vkw::ResetCommand(dst_cmd_buf);
     vkw::BeginCommand(dst_cmd_buf, true);  // once command
@@ -431,8 +519,9 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
     }
 
     // Create Rendering Pipeline
-    auto frame_buf = UpdateRenderPipeline(dst_img_format, dst_img_view,
-                                          dst_img_size, final_layout);
+    auto frame_buf =
+            UpdateRenderPipeline(dst_img_format, dst_img_view, dst_img_size,
+                                 dst_final_layout, bg_img_view, bg_img_layout);
 
     // Update uniform buffer
     UpdateUnifBuf(draw_data);
