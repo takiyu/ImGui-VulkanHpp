@@ -1,5 +1,5 @@
 # ImGui-VulkanHpp
-ImGui Backend Implementation for VulkanHpp.
+Simpler ImGui Backend Implementation for VulkanHpp.
 
 ## Usage
 ```cpp
