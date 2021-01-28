@@ -153,9 +153,10 @@ int main(int argc, char const* argv[]) {
     vkw::UpdateDescriptorSets(device, write_desc_set_pack);
     // Render pass
     auto render_pass_pack = vkw::CreateRenderPassPack();
-    vkw::AddAttachientDesc(
-            render_pass_pack, surface_format, vk::AttachmentLoadOp::eClear,
-            vk::AttachmentStoreOp::eStore, vk::ImageLayout::ePresentSrcKHR);
+    vkw::AddAttachientDesc(render_pass_pack, surface_format,
+                           vk::AttachmentLoadOp::eClear,
+                           vk::AttachmentStoreOp::eStore,
+                           vk::ImageLayout::eShaderReadOnlyOptimal);
     vkw::AddAttachientDesc(render_pass_pack, DEPTH_FORMAT,
                            vk::AttachmentLoadOp::eClear,
                            vk::AttachmentStoreOp::eDontCare,
@@ -198,27 +199,33 @@ int main(int argc, char const* argv[]) {
             vk::ImageUsageFlagBits::eDepthStencilAttachment, {},
             true,  // tiling
             vk::ImageAspectFlagBits::eDepth);
+    // Color buffer
+    auto color_img_pack = vkw::CreateImagePack(
+            physical_device, device, surface_format, swapchain_pack->size, 1,
+            vk::ImageUsageFlagBits::eColorAttachment |
+                    vk::ImageUsageFlagBits::eSampled,
+            {},
+            true,  // tiling
+            vk::ImageAspectFlagBits::eColor);
     // Frame buffer
-    auto frame_buffer_packs =
-            vkw::CreateFrameBuffers(device, render_pass_pack,
-                                    {nullptr, depth_img_pack}, swapchain_pack);
+    auto frame_buffer_pack = vkw::CreateFrameBuffer(
+            device, render_pass_pack, {color_img_pack, depth_img_pack});
     // Command buffer
-    auto n_cmd_bufs = static_cast<uint32_t>(frame_buffer_packs.size());
     auto cube_cmd_bufs_pack =
-            vkw::CreateCommandBuffersPack(device, queue_family_idx, n_cmd_bufs);
+            vkw::CreateCommandBuffersPack(device, queue_family_idx, 1);
+    auto& cube_cmd_buf = cube_cmd_bufs_pack->cmd_bufs[0];
     auto imgui_cmd_bufs_pack =
             vkw::CreateCommandBuffersPack(device, queue_family_idx, 1);
     auto& imgui_cmd_buf = imgui_cmd_bufs_pack->cmd_bufs[0];
 
     // Record commands
-    for (uint32_t cmd_idx = 0; cmd_idx < n_cmd_bufs; cmd_idx++) {
-        auto& cmd_buf = cube_cmd_bufs_pack->cmd_bufs[cmd_idx];
+    {
+        auto& cmd_buf = cube_cmd_buf;
         vkw::ResetCommand(cmd_buf);
         vkw::BeginCommand(cmd_buf);
 
         const std::array<float, 4> clear_color = {0.2f, 0.2f, 0.2f, 1.0f};
-        vkw::CmdBeginRenderPass(cmd_buf, render_pass_pack,
-                                frame_buffer_packs[cmd_idx],
+        vkw::CmdBeginRenderPass(cmd_buf, render_pass_pack, frame_buffer_pack,
                                 {vk::ClearColorValue(clear_color),
                                  vk::ClearDepthStencilValue(1.f, 0)});
         vkw::CmdBindPipeline(cmd_buf, pipeline_pack);
@@ -267,8 +274,6 @@ int main(int argc, char const* argv[]) {
         uint32_t curr_img_idx = vkw::AcquireNextImage(
                 device, swapchain_pack, img_acquired_semaphore, nullptr);
         auto& swapchain_img = swapchain_pack->imgs[curr_img_idx];
-        // Get command buffer
-        auto& cube_cmd_buf = cube_cmd_bufs_pack->cmd_bufs[curr_img_idx];
 
         // Submit
         auto draw_cube_semaphore = vkw::CreateSemaphore(device);
@@ -291,7 +296,9 @@ int main(int argc, char const* argv[]) {
         ImDrawData* draw_data = ImGui::GetDrawData();
         ImGui_ImplVulkanHpp_RenderDrawData(
                 draw_data, imgui_cmd_buf, swapchain_img->view.get(),
-                swapchain_img->view_format, swapchain_img->view_size);
+                swapchain_img->view_format, swapchain_img->view_size,
+                vk::ImageLayout::ePresentSrcKHR, color_img_pack->view.get(),
+                vk::ImageLayout::eShaderReadOnlyOptimal);
 
         auto draw_imgui_semaphore = vkw::CreateSemaphore(device);
         auto draw_imgui_fence = vkw::CreateFence(device);

@@ -170,7 +170,13 @@ endif()
 # ---------------------------------- Examples ----------------------------------
 # ------------------------------------------------------------------------------
 if (IMGUIVKHPP_BUILD_EXAMPLES)
+    # Standard GLFW example
     add_executable(main_glfw
                    ${CMAKE_CURRENT_SOURCE_DIR}/example/main_glfw.cpp)
     setup_target(main_glfw "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}")
+
+    # BG-mode GLFW example
+    add_executable(main_glfw_bg
+                   ${CMAKE_CURRENT_SOURCE_DIR}/example/main_glfw_bg.cpp)
+    setup_target(main_glfw_bg "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}")
 endif()

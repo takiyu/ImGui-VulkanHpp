@@ -244,11 +244,10 @@ vkw::FrameBufferPackPtr UpdateRenderPipeline(
         if (bg_img_view) {
             // Bind descriptor set with actual buffer (BG)
             g_ctx.bg_write_desc_set_pack = vkw::CreateWriteDescSetPack();
-            vkw::AddWriteDescSet(
-                    g_ctx.imgui_write_desc_set_pack, g_ctx.imgui_desc_set_pack,
-                    0,
-                    {vk::DescriptorImageInfo{g_ctx.bg_sampler.get(),
-                                             bg_img_view, bg_img_layout}});
+            std::vector<vk::DescriptorImageInfo> desc_img_infos = {
+                    {g_ctx.bg_sampler.get(), bg_img_view, bg_img_layout}};
+            vkw::AddWriteDescSet(g_ctx.bg_write_desc_set_pack,
+                                 g_ctx.bg_desc_set_pack, 0, desc_img_infos);
             vkw::UpdateDescriptorSets(device, g_ctx.bg_write_desc_set_pack);
         }
 
@@ -281,7 +280,7 @@ vkw::FrameBufferPackPtr UpdateRenderPipeline(
             vkw::PipelineInfo bg_pipeline_info;
             bg_pipeline_info.color_blend_infos.resize(1);
             bg_pipeline_info.depth_test_enable = false;
-            auto pipeline_pack1 = vkw::CreateGraphicsPipeline(
+            g_ctx.bg_pipeline_pack = vkw::CreateGraphicsPipeline(
                     device,
                     {g_ctx.bg_vert_shader_pack, g_ctx.bg_frag_shader_pack}, {},
                     {}, bg_pipeline_info, {g_ctx.bg_desc_set_pack},
@@ -338,6 +337,8 @@ void RecordDrawCmds(const vk::UniqueCommandBuffer& dst_cmd_buf,
 
     // BG pass
     if (g_ctx.bg_img_view) {
+        vkw::CmdSetScissor(dst_cmd_buf,
+                           vk::Extent2D{frame_buf->width, frame_buf->height});
         vkw::CmdBindPipeline(dst_cmd_buf, g_ctx.bg_pipeline_pack);
         vkw::CmdBindDescSets(dst_cmd_buf, g_ctx.bg_pipeline_pack,
                              {g_ctx.bg_desc_set_pack});
@@ -540,7 +541,6 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_RenderDrawData(
     RecordDrawCmds(dst_cmd_buf, draw_data, draw_size, frame_buf);
 
     vkw::EndCommand(dst_cmd_buf);
-    return;
 }
 
 // -----------------------------------------------------------------------------
