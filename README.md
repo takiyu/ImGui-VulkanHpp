@@ -63,3 +63,7 @@ Please pass image view and layout into `ImGui_ImplVulkanHpp_RenderDrawData`;
 
 (If someone knows why standard example dose not work on GTX10xx,
  please open issues.)
+
+## Note
+Internal Implementation is depending on [VulkanWrapper](https://github.com/takiyu/VulkanWrapper).
+It should be replaced with raw `vulkan.hpp`.
