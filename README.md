@@ -47,6 +47,8 @@ ImGui Backend Implementation for VulkanHpp.
 ## Standard
 See `examples/main_glfw.cpp`.
 
+<img src="https://raw.githubusercontent.com/takiyu/ImGui-VulkanHpp/master/data/example.png">
+
 Most of latest GPUs could be worked on. (RTX2080, ...)
 This is the fastest version.
 
