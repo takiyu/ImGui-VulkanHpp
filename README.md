@@ -1,7 +1,7 @@
 # ImGui-VulkanHpp
 ImGui Backend Implementation for VulkanHpp.
 
-# Usage
+## Usage
 ```cpp
     // Initialize Vulkan
     ...
@@ -43,8 +43,8 @@ ImGui Backend Implementation for VulkanHpp.
     ImGui::DestroyContext();
 ```
 
-# Examples
-## Standard
+## Examples
+### Standard
 See `examples/main_glfw.cpp`.
 
 <img src="https://raw.githubusercontent.com/takiyu/ImGui-VulkanHpp/master/data/example.png">
@@ -52,7 +52,7 @@ See `examples/main_glfw.cpp`.
 Most of latest GPUs could be worked on. (RTX2080, ...)
 This is the fastest version.
 
-## With Background Drawing
+### With Background Drawing
 See `examples/main_glfw_bg.cpp`.
 
 Supporting drawing background image for GTX10xx (GTX1060, GTX1080, ...),
