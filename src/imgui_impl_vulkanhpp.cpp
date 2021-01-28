@@ -331,15 +331,25 @@ void UpdateUnifBuf(ImDrawData* draw_data) {
 void RecordDrawCmds(const vk::UniqueCommandBuffer& dst_cmd_buf,
                     ImDrawData* draw_data, const ImVec2& draw_size,
                     const vkw::FrameBufferPackPtr& frame_buf) {
+    // Begin render pass
     vkw::CmdBeginRenderPass(dst_cmd_buf, g_ctx.render_pass_pack, frame_buf, {});
+    vkw::CmdSetViewport(dst_cmd_buf,
+                        vk::Extent2D{frame_buf->width, frame_buf->height});
+
+    // BG pass
+    if (g_ctx.bg_img_view) {
+        vkw::CmdBindPipeline(dst_cmd_buf, g_ctx.bg_pipeline_pack);
+        vkw::CmdBindDescSets(dst_cmd_buf, g_ctx.bg_pipeline_pack,
+                             {g_ctx.bg_desc_set_pack});
+        vkw::CmdDraw(dst_cmd_buf, 3);
+        vkw::CmdNextSubPass(dst_cmd_buf);
+    }
+    // ImGui pass
     vkw::CmdBindPipeline(dst_cmd_buf, g_ctx.imgui_pipeline_pack);
     vkw::CmdBindDescSets(dst_cmd_buf, g_ctx.imgui_pipeline_pack,
                          {g_ctx.imgui_desc_set_pack}, {0});
     vkw::CmdBindVertexBuffers(dst_cmd_buf, 0, {g_ctx.vtx_buf_pack});
     vkw::CmdBindIndexBuffer(dst_cmd_buf, g_ctx.idx_buf_pack, 0, IDX_TYPE);
-    vkw::CmdSetViewport(dst_cmd_buf,
-                        vk::Extent2D{frame_buf->width, frame_buf->height});
-
     const ImVec2& clip_off = draw_data->DisplayPos;
     const ImVec2& clip_scale = draw_data->FramebufferScale;
     uint32_t global_vtx_offset = 0;
@@ -385,11 +395,11 @@ void RecordDrawCmds(const vk::UniqueCommandBuffer& dst_cmd_buf,
                 }
             }
         }
-
         global_idx_offset += static_cast<uint32_t>(cmd_list->IdxBuffer.Size);
         global_vtx_offset += static_cast<uint32_t>(cmd_list->VtxBuffer.Size);
     }
 
+    // End render pass
     vkw::CmdEndRenderPass(dst_cmd_buf);
 }
 
