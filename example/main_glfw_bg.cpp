@@ -153,14 +153,14 @@ int main(int argc, char const* argv[]) {
     vkw::UpdateDescriptorSets(device, write_desc_set_pack);
     // Render pass
     auto render_pass_pack = vkw::CreateRenderPassPack();
-    vkw::AddAttachientDesc(render_pass_pack, surface_format,
-                           vk::AttachmentLoadOp::eClear,
-                           vk::AttachmentStoreOp::eStore,
-                           vk::ImageLayout::eShaderReadOnlyOptimal);
-    vkw::AddAttachientDesc(render_pass_pack, DEPTH_FORMAT,
-                           vk::AttachmentLoadOp::eClear,
-                           vk::AttachmentStoreOp::eDontCare,
-                           vk::ImageLayout::eDepthStencilAttachmentOptimal);
+    vkw::AddAttachientDesc(
+            render_pass_pack, surface_format, vk::ImageLayout::eUndefined,
+            vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore);
+    vkw::AddAttachientDesc(
+            render_pass_pack, DEPTH_FORMAT, vk::ImageLayout::eUndefined,
+            vk::ImageLayout::eDepthStencilAttachmentOptimal,
+            vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare);
     // Subpass
     vkw::AddSubpassDesc(render_pass_pack, {},
                         {{0, vk::ImageLayout::eColorAttachmentOptimal}},

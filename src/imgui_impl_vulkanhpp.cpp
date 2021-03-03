@@ -220,7 +220,8 @@ void UpdateFontTex(const vk::UniqueCommandBuffer& dst_cmd_buf) {
 
     // Copy from buffer to image
     vkw::CopyBufferToImage(dst_cmd_buf, g_ctx.font_buf_pack,
-                           g_ctx.font_img_pack);
+                           g_ctx.font_img_pack, vk::ImageLayout::eUndefined,
+                           vk::ImageLayout::eShaderReadOnlyOptimal);
 }
 
 vkw::FrameBufferPackPtr UpdateRenderPipeline(
@@ -255,8 +256,9 @@ vkw::FrameBufferPackPtr UpdateRenderPipeline(
         g_ctx.render_pass_pack = vkw::CreateRenderPassPack();
         // Add color attachment
         vkw::AddAttachientDesc(g_ctx.render_pass_pack, dst_img_format,
+                               vk::ImageLayout::eUndefined, dst_final_layout,
                                vk::AttachmentLoadOp::eLoad,
-                               vk::AttachmentStoreOp::eStore, dst_final_layout);
+                               vk::AttachmentStoreOp::eStore);
         // Add subpass
         if (bg_img_view) {
             vkw::AddSubpassDesc(
@@ -492,8 +494,7 @@ IMGUI_IMPL_API void ImGui_ImplVulkanHpp_NewFrame(
     vkw::AddWriteDescSet(g_ctx.imgui_write_desc_set_pack,
                          g_ctx.imgui_desc_set_pack, 0, {g_ctx.unif_buf_pack});
     vkw::AddWriteDescSet(g_ctx.imgui_write_desc_set_pack,
-                         g_ctx.imgui_desc_set_pack, 1,
-                         {g_ctx.font_tex_pack},  // layout is still undefined.
+                         g_ctx.imgui_desc_set_pack, 1, {g_ctx.font_tex_pack},
                          {vk::ImageLayout::eShaderReadOnlyOptimal});
     vkw::UpdateDescriptorSets(device, g_ctx.imgui_write_desc_set_pack);
 

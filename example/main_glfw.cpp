@@ -154,12 +154,13 @@ int main(int argc, char const* argv[]) {
     // Render pass
     auto render_pass_pack = vkw::CreateRenderPassPack();
     vkw::AddAttachientDesc(
-            render_pass_pack, surface_format, vk::AttachmentLoadOp::eClear,
-            vk::AttachmentStoreOp::eStore, vk::ImageLayout::ePresentSrcKHR);
-    vkw::AddAttachientDesc(render_pass_pack, DEPTH_FORMAT,
-                           vk::AttachmentLoadOp::eClear,
-                           vk::AttachmentStoreOp::eDontCare,
-                           vk::ImageLayout::eDepthStencilAttachmentOptimal);
+            render_pass_pack, surface_format, vk::ImageLayout::eUndefined,
+            vk::ImageLayout::ePresentSrcKHR, vk::AttachmentLoadOp::eClear,
+            vk::AttachmentStoreOp::eStore);
+    vkw::AddAttachientDesc(
+            render_pass_pack, DEPTH_FORMAT, vk::ImageLayout::eUndefined,
+            vk::ImageLayout::eDepthStencilAttachmentOptimal,
+            vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare);
     // Subpass
     vkw::AddSubpassDesc(render_pass_pack, {},
                         {{0, vk::ImageLayout::eColorAttachmentOptimal}},
