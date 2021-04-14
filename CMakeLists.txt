@@ -1,10 +1,14 @@
-cmake_minimum_required(VERSION 3.11)
+if (ANDROID)
+    cmake_minimum_required(VERSION 3.10)
+else()
+    cmake_minimum_required(VERSION 3.11)
+endif()
 
 # ------------------------------------------------------------------------------
 # -------------------------------- Check parent --------------------------------
 # ------------------------------------------------------------------------------
 get_directory_property(HAS_PARENT PARENT_DIRECTORY)
-if(HAS_PARENT)
+if (HAS_PARENT)
     message(STATUS "Build ImGui-VulkanHpp as subdirectory mode")
 else()
     message(STATUS "Build ImGui-VulkanHpp as independent mode")
