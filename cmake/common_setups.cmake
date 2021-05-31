@@ -8,6 +8,7 @@
 # History
 #   - 2021/05/31 Using FetchContent
 #   - 2021/06/01 Add MSVC compile options
+#   - 2021/06/01 Replace function with macro for no-scope.
 #
 
 # Print make commands for debug
@@ -78,10 +79,10 @@ function(setup_target target includes libs is_own)
                               PROPERTIES COMPILE_FLAGS ${warning_options})
         add_sanitizers(${target})
     endif()
-endfunction(setup_target)
+endfunction()
 
-# Utility function to setup third_party
-function(setup_third_party url tag is_subdir third_party_dir)
+# Utility function to setup third_party (macro for no scope)
+macro(setup_third_party url tag is_subdir third_party_dir)
     get_filename_component(target ${url} NAME)  # Generate name from URL
     message(">> FetchContent: [${target}](${tag})")
 
@@ -102,4 +103,4 @@ function(setup_third_party url tag is_subdir third_party_dir)
     else()
         message(STATUS "No FetchContent support (CMake 3.11 is required)")
     endif()
-endfunction(setup_third_party)
+endmacro()
