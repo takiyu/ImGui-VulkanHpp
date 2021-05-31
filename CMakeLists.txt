@@ -112,9 +112,9 @@ list(APPEND IMGUIVKHPP_LIBRARY imgui_vkhpp)
 # ----------------------------- Pass to the parent -----------------------------
 # ------------------------------------------------------------------------------
 if (HAS_PARENT)
-    set(IMGUIVKHPP_INCLUDE ${IMGUIVKHPP_INCLUDE} PARENT_SCOPE)
-    set(IMGUIVKHPP_LIBRARY ${IMGUIVKHPP_LIBRARY} PARENT_SCOPE)
-    set(IMGUIVKHPP_DEFINE ${IMGUIVKHPP_DEFINE} PARENT_SCOPE)
+    set(IMGUIVKHPP_INCLUDE ${IMGUIVKHPP_INCLUDE} CACHE INTERNAL "")
+    set(IMGUIVKHPP_LIBRARY ${IMGUIVKHPP_LIBRARY} CACHE INTERNAL "")
+    set(IMGUIVKHPP_DEFINE ${IMGUIVKHPP_DEFINE} CACHE INTERNAL "")
 endif()
 
 # ------------------------------------------------------------------------------
