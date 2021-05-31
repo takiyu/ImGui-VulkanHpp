@@ -7,6 +7,7 @@
 #
 # History
 #   - 2021/05/31 Using FetchContent
+#   - 2021/06/01 Add MSVC compile options
 #
 
 # Print make commands for debug
@@ -56,6 +57,14 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 else()
     message(WARNING "Unsupported compiler for warning options")
     message("CMAKE_CXX_COMPILER_ID is ${CMAKE_CXX_COMPILER_ID}")
+endif()
+
+# Specific compile options
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+    add_definitions(-D_CRT_SECURE_NO_WARNING)
+    add_definitions(-DNOMINMAX)
+    add_compile_options(/MP)      # Parallel build
+    add_compile_options(/bigobj)  # Increase limit of symbols
 endif()
 
 # Utility function to setup a target
