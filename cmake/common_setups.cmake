@@ -9,6 +9,7 @@
 #   - 2021/05/31 Using FetchContent
 #   - 2021/06/01 Add MSVC compile options
 #   - 2021/06/01 Replace function with macro for no-scope.
+#   - 2021/06/01 Add ccache
 #
 
 # Print make commands for debug
@@ -67,6 +68,14 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     add_compile_options(/MP)      # Parallel build
     add_compile_options(/bigobj)  # Increase limit of symbols
 endif()
+
+# Ccache
+find_program(CCACHE_FOUND ccache)
+if (CCACHE_FOUND)
+    message(STATUS "Using Ccache")
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ccache)
+endif(CCACHE_FOUND)
 
 # Utility function to setup a target
 function(setup_target target includes libs is_own)
