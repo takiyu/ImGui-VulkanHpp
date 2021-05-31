@@ -78,7 +78,7 @@ if (IMGUIVKHPP_USE_INTERNAL_IMGUI)
                       ${IMGUI_PATH}/imgui_widgets.cpp
                       ${IMGUI_PATH}/imgui_demo.cpp)
     if (IMGUIVKHPP_USE_INTERNAL_IMGUI_GLFW_BACKEND)
-        message(STATUS "  With GLFW backend")
+        message(STATUS "With GLFW backend")
         list(APPEND IMGUI_SOURCES ${IMGUI_PATH}/backends/imgui_impl_glfw.cpp)
     endif()
     add_library(imgui ${IMGUI_SOURCES})
