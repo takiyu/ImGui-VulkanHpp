@@ -10,6 +10,7 @@
 #   - 2021/06/01 Add MSVC compile options
 #   - 2021/06/01 Replace function with macro for no-scope.
 #   - 2021/06/01 Add ccache
+#   - 2021/06/01 Remove .git from target name
 #
 
 # Print make commands for debug
@@ -92,7 +93,7 @@ endfunction()
 
 # Utility function to setup third_party (macro for no scope)
 macro(setup_third_party url tag is_subdir third_party_dir)
-    get_filename_component(target ${url} NAME)  # Generate name from URL
+    get_filename_component(target ${url} NAME_WLE)  # Generate name from URL
     message(">> FetchContent: [${target}](${tag})")
 
     # Version check
