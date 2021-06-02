@@ -12,6 +12,7 @@
 #   - 2021/06/01 Remove .git from target name
 #   - 2021/06/02 Considering directory existence for FetchContent
 #
+message(STATUS "CommonSetups 0.3")
 
 # Print make commands for debug
 # set(CMAKE_VERBOSE_MAKEFILE 1)
@@ -95,7 +96,11 @@ macro(setup_third_party url tag is_subdir third_party_dir)
         set(FETCHCONTENT_QUIET TRUE)
         # Check directory
         if (EXISTS ${third_party_dir}/${target})
+            message("  >> Already fetched")
             set(FETCHCONTENT_FULLY_DISCONNECTED TRUE)
+        else()
+            message("  >> Download")
+            set(FETCHCONTENT_FULLY_DISCONNECTED FALSE)
         endif()
         # Define
         FetchContent_Declare(${target}
