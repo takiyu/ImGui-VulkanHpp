@@ -9,8 +9,8 @@
 #   - 2021/05/31 Using FetchContent
 #   - 2021/06/01 Add MSVC compile options
 #   - 2021/06/01 Replace function with macro for no-scope.
-#   - 2021/06/01 Add ccache
 #   - 2021/06/01 Remove .git from target name
+#   - 2021/06/02 Considering directory existence for FetchContent
 #
 
 # Print make commands for debug
@@ -56,7 +56,7 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
                          -Wsign-promo -Wstrict-null-sentinel \
                          -Wstrict-overflow=5 -Wundef -Wno-unknown-pragmas")
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
-    set(warning_options "/W4")
+    set(warning_options "/W3")
 else()
     message(WARNING "Unsupported compiler for warning options")
     message("CMAKE_CXX_COMPILER_ID is ${CMAKE_CXX_COMPILER_ID}")
@@ -70,21 +70,13 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     add_compile_options(/bigobj)  # Increase limit of symbols
 endif()
 
-# Ccache
-find_program(CCACHE_FOUND ccache)
-if (CCACHE_FOUND)
-    message(STATUS "Using Ccache")
-    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
-    set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ccache)
-endif(CCACHE_FOUND)
-
 # Utility function to setup a target
 function(setup_target target includes libs is_own)
-    # (include, link)
+    # Include and Link
     target_include_directories(${target} PUBLIC ${includes})
     target_link_libraries(${target} ${libs})
     if (${is_own})
-        # (warning, sanitizer)
+        # Warning and sanitizer
         set_target_properties(${target}
                               PROPERTIES COMPILE_FLAGS ${warning_options})
         add_sanitizers(${target})
@@ -98,19 +90,31 @@ macro(setup_third_party url tag is_subdir third_party_dir)
 
     # Version check
     if ("3.10" VERSION_LESS ${CMAKE_VERSION})
-        include(FetchContent)  # (setup)
+        # Setup FetchContent
+        include(FetchContent)
         set(FETCHCONTENT_QUIET TRUE)
-        set(FETCHCONTENT_UPDATES_DISCONNECTED TRUE)
+        # Check directory
+        if (EXISTS ${third_party_dir}/${target})
+            set(FETCHCONTENT_FULLY_DISCONNECTED TRUE)
+        endif()
+        # Define
         FetchContent_Declare(${target}
                              GIT_REPOSITORY ${url}
                              SOURCE_DIR ${third_party_dir}/${target}
-                             GIT_TAG ${tag})  # (define)
+                             GIT_TAG ${tag})
         if (${is_subdir})
-            FetchContent_MakeAvailable(${target})  # (fetch, subdirectory)
+            # Fetch and subdirectory
+            FetchContent_MakeAvailable(${target})
         else()
-            FetchContent_Populate(${target})  # (fetch)
+            # Fetch
+            FetchContent_Populate(${target})
         endif()
     else()
+        # No FetchContent
         message(STATUS "No FetchContent support (CMake 3.11 is required)")
+        if (${is_subdir})
+            # Subdirectory
+            add_subdirectory(${third_party_dir}/${target})
+        endif()
     endif()
 endmacro()
