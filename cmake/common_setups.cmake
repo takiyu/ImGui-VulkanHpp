@@ -12,7 +12,12 @@
 #   - 2021/06/01 Remove .git from target name
 #   - 2021/06/02 Considering directory existence for FetchContent
 #
-message(STATUS "CommonSetups 0.3")
+message(STATUS "CommonSetups 0.4")
+
+# Update this script
+# file(DOWNLOAD
+#     "https://raw.githubusercontent.com/takiyu/common_setups.cmake/master/common_setups.cmake"
+#     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/common_setups.cmake SHOW_PROGRESS)
 
 # Print make commands for debug
 # set(CMAKE_VERBOSE_MAKEFILE 1)
@@ -97,10 +102,10 @@ macro(setup_third_party url tag is_subdir third_party_dir)
         # Check directory
         if (EXISTS ${third_party_dir}/${target})
             message("  >> Already fetched")
-            set(FETCHCONTENT_FULLY_DISCONNECTED TRUE)
+            set(FETCHCONTENT_UPDATE_DISCONNECTED TRUE)
         else()
-            message("  >> Download")
-            set(FETCHCONTENT_FULLY_DISCONNECTED FALSE)
+            message("  >> Initial Download")
+            set(FETCHCONTENT_UPDATE_DISCONNECTED FALSE)
         endif()
         # Define
         FetchContent_Declare(${target}
