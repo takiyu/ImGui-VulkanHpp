@@ -11,8 +11,9 @@
 #   - 2021/06/01 Replace function with macro for no-scope.
 #   - 2021/06/01 Remove .git from target name
 #   - 2021/06/02 Considering directory existence for FetchContent
+#   - 2021/06/03 Population switching
 #
-message(STATUS "CommonSetups 0.4")
+message(STATUS "CommonSetups 0.5")
 
 # Update this script
 # file(DOWNLOAD
@@ -92,6 +93,7 @@ endfunction()
 # Utility function to setup third_party (macro for no scope)
 macro(setup_third_party url tag is_subdir third_party_dir)
     get_filename_component(target ${url} NAME_WLE)  # Generate name from URL
+    string(TOLOWER ${target} target_lc)             # Lower name
     message(">> FetchContent: [${target}](${tag})")
 
     # Version check
@@ -102,29 +104,38 @@ macro(setup_third_party url tag is_subdir third_party_dir)
         # Check directory
         if (EXISTS ${third_party_dir}/${target})
             message("  >> Already fetched")
-            set(FETCHCONTENT_UPDATE_DISCONNECTED TRUE)
+            set(FETCHCONTENT_FULLY_DISCONNECTED TRUE)
         else()
             message("  >> Initial Download")
-            set(FETCHCONTENT_UPDATE_DISCONNECTED FALSE)
+            set(FETCHCONTENT_FULLY_DISCONNECTED FALSE)
         endif()
         # Define
         FetchContent_Declare(${target}
                              GIT_REPOSITORY ${url}
                              SOURCE_DIR ${third_party_dir}/${target}
                              GIT_TAG ${tag})
-        if (${is_subdir})
-            # Fetch and subdirectory
-            FetchContent_MakeAvailable(${target})
-        else()
-            # Fetch
+        # Get properties
+        FetchContent_GetProperties(${target})
+        # Populate
+        if (NOT ${target_lc}_POPULATED)  # (escape double population)
             FetchContent_Populate(${target})
         endif()
+        # Subdirectory
+        if (${is_subdir})
+            # Note: The following two subdirectories are exactly same.
+            # add_subdirectory(${${target_lc}_SOURCE_DIR}
+            #                  ${${target_lc}_BINARY_DIR})
+            add_subdirectory(${third_party_dir}/${target}
+                             ${CMAKE_BINARY_DIR}/_deps/${target_lc}-build)
+        endif()
+
     else()
         # No FetchContent
         message(STATUS "No FetchContent support (CMake 3.11 is required)")
+        # Subdirectory
         if (${is_subdir})
-            # Subdirectory
-            add_subdirectory(${third_party_dir}/${target})
+            add_subdirectory(${third_party_dir}/${target}
+                             ${CMAKE_BINARY_DIR}/_deps/${target_lc}-build)
         endif()
     endif()
 endmacro()
