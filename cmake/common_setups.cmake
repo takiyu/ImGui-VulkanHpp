@@ -12,13 +12,27 @@
 #   - 2021/06/01 Remove .git from target name
 #   - 2021/06/02 Considering directory existence for FetchContent
 #   - 2021/06/03 Population switching
+#   - 2021/06/08 Check version
+#   - 2021/06/09 Explicit git checkout
 #
-message(STATUS "CommonSetups 0.5")
+message(STATUS "common_setups.cmake v0.6")
+set(CSC_VERSION_LOCAL 6)
+
+# Check version
+if (DEFINED CSC_VERSION)
+    # Check version
+    if (NOT ${CSC_VERSION} EQUAL ${CSC_VERSION_LOCAL})
+        message(FATAL_ERROR "CSC_VERSION mismatch")
+    endif()
+else()
+    # Set version globally
+    set(CSC_VERSION ${CSC_VERSION_LOCAL} CACHE INTERNAL "CSC_VERSION")
+endif()
 
 # Update this script
 # file(DOWNLOAD
-#     "https://raw.githubusercontent.com/takiyu/common_setups.cmake/master/common_setups.cmake"
-#     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/common_setups.cmake SHOW_PROGRESS)
+#      "https://raw.githubusercontent.com/takiyu/common_setups.cmake/master/common_setups.cmake"
+#      ${CMAKE_CURRENT_SOURCE_DIR}/cmake/common_setups.cmake SHOW_PROGRESS)
 
 # Print make commands for debug
 # set(CMAKE_VERBOSE_MAKEFILE 1)
@@ -101,14 +115,27 @@ macro(setup_third_party url tag is_subdir third_party_dir)
         # Setup FetchContent
         include(FetchContent)
         set(FETCHCONTENT_QUIET TRUE)
-        # Check directory
-        if (EXISTS ${third_party_dir}/${target})
+        set(FETCHCONTENT_UPDATE_DISCONNECTED FALSE)  # Ensure
+
+        # Checkout explicitly
+        set(checkout_result "1")  # Mark as failed
+        if (EXISTS ${third_party_dir}/${target}/.git)
+            find_package(Git REQUIRED)
+            execute_process(COMMAND ${GIT_EXECUTABLE} checkout ${tag}
+                            WORKING_DIRECTORY ${third_party_dir}/${target}
+                            RESULT_VARIABLE checkout_result
+                            OUTPUT_QUIET ERROR_QUIET)
+        endif()
+
+        # Check need of update
+        if (${checkout_result} EQUAL "0")
             message("  >> Already fetched")
             set(FETCHCONTENT_FULLY_DISCONNECTED TRUE)
         else()
             message("  >> Initial Download")
             set(FETCHCONTENT_FULLY_DISCONNECTED FALSE)
         endif()
+
         # Define
         FetchContent_Declare(${target}
                              GIT_REPOSITORY ${url}
