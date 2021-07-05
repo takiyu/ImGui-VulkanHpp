@@ -14,6 +14,7 @@
 #   - 2021/06/03 Population switching
 #   - 2021/06/08 Check version
 #   - 2021/06/09 Explicit git checkout
+#   - 2021/07/05 Restore FETCHCONTENT_... vairbales
 #
 message(STATUS "common_setups.cmake v0.6")
 set(CSC_VERSION_LOCAL 6)
@@ -112,6 +113,11 @@ macro(setup_third_party url tag is_subdir third_party_dir)
 
     # Version check
     if ("3.10" VERSION_LESS ${CMAKE_VERSION})
+        # Store previous values
+        set(PREV_QUIET ${FETCHCONTENT_QUIET})
+        set(PREV_UPDATE_DISCONNECTED ${FETCHCONTENT_UPDATE_DISCONNECTED})
+        set(PREV_FULLY_DISCONNECTED ${FETCHCONTENT_FULLY_DISCONNECTED})
+
         # Setup FetchContent
         include(FetchContent)
         set(FETCHCONTENT_QUIET TRUE)
@@ -135,6 +141,11 @@ macro(setup_third_party url tag is_subdir third_party_dir)
             message("  >> Initial Download")
             set(FETCHCONTENT_FULLY_DISCONNECTED FALSE)
         endif()
+
+        # Restore overwitten values
+        set(FETCHCONTENT_QUIET ${PREV_QUIET})
+        set(FETCHCONTENT_UPDATE_DISCONNECTED ${PREV_UPDATE_DISCONNECTED})
+        set(FETCHCONTENT_FULLY_DISCONNECTED ${PREV_FULLY_DISCONNECTED})
 
         # Define
         FetchContent_Declare(${target}
