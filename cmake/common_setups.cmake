@@ -16,8 +16,8 @@
 #   - 2021/06/09 Explicit git checkout
 #   - 2021/07/05 Restore FETCHCONTENT_... vairbales
 #
-message(STATUS "common_setups.cmake v0.7")
-set(CSC_VERSION_LOCAL 7)
+message(STATUS "common_setups.cmake v0.8")
+set(CSC_VERSION_LOCAL 8)
 
 # Check version
 if (DEFINED CSC_VERSION)
@@ -142,11 +142,6 @@ macro(setup_third_party url tag is_subdir third_party_dir)
             set(FETCHCONTENT_FULLY_DISCONNECTED FALSE)
         endif()
 
-        # Restore overwitten values
-        set(FETCHCONTENT_QUIET ${PREV_QUIET})
-        set(FETCHCONTENT_UPDATE_DISCONNECTED ${PREV_UPDATE_DISCONNECTED})
-        set(FETCHCONTENT_FULLY_DISCONNECTED ${PREV_FULLY_DISCONNECTED})
-
         # Define
         FetchContent_Declare(${target}
                              GIT_REPOSITORY ${url}
@@ -167,6 +162,10 @@ macro(setup_third_party url tag is_subdir third_party_dir)
                              ${CMAKE_BINARY_DIR}/_deps/${target_lc}-build)
         endif()
 
+        # Restore overwitten values
+        set(FETCHCONTENT_QUIET ${PREV_QUIET})
+        set(FETCHCONTENT_UPDATE_DISCONNECTED ${PREV_UPDATE_DISCONNECTED})
+        set(FETCHCONTENT_FULLY_DISCONNECTED ${PREV_FULLY_DISCONNECTED})
     else()
         # No FetchContent
         message(STATUS "No FetchContent support (CMake 3.11 is required)")
