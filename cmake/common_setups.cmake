@@ -16,8 +16,8 @@
 #   - 2021/06/09 Explicit git checkout
 #   - 2021/07/05 Restore FETCHCONTENT_... vairbales
 #
-message(STATUS "common_setups.cmake v0.6")
-set(CSC_VERSION_LOCAL 6)
+message(STATUS "common_setups.cmake v0.7")
+set(CSC_VERSION_LOCAL 7)
 
 # Check version
 if (DEFINED CSC_VERSION)
