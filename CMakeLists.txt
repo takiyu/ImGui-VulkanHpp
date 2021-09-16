@@ -59,7 +59,7 @@ if (IMGUIVKHPP_USE_INTERNAL_VKW)
     set(VKW_LINK_DYNAMIC_VK ON CACHE BOOL "")
     set(VKW_THIRD_PARTY_PATH ${IMGUIVKHPP_THIRD_PARTY_PATH} CACHE STRING "")
     setup_third_party("https://github.com/takiyu/VulkanWrapper"
-                      "4238b50c25d5dd192003e68f21d377c6cdafa779" TRUE
+                      "4579fc54916aac88899ab980eec20df769d25f96" TRUE
                       ${IMGUIVKHPP_THIRD_PARTY_PATH})
     list(APPEND IMGUIVKHPP_INCLUDE ${VKW_INCLUDE})
     list(APPEND IMGUIVKHPP_LIBRARY ${VKW_LIBRARY})
