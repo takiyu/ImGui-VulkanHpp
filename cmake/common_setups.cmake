@@ -15,9 +15,10 @@
 #   - 2021/06/08 Check version
 #   - 2021/06/09 Explicit git checkout
 #   - 2021/07/05 Restore FETCHCONTENT_... vairbales
+#   - 2021/09/16 Fix for android
 #
-message(STATUS "common_setups.cmake v0.8")
-set(CSC_VERSION_LOCAL 8)
+message(STATUS "common_setups.cmake v0.9")
+set(CSC_VERSION_LOCAL 9)
 
 # Check version
 if (DEFINED CSC_VERSION)
@@ -107,12 +108,12 @@ endfunction()
 
 # Utility function to setup third_party (macro for no scope)
 macro(setup_third_party url tag is_subdir third_party_dir)
-    get_filename_component(target ${url} NAME_WLE)  # Generate name from URL
+    get_filename_component(target ${url} NAME_WE)  # Generate name from URL
     string(TOLOWER ${target} target_lc)             # Lower name
     message(">> FetchContent: [${target}](${tag})")
 
     # Version check
-    if ("3.10" VERSION_LESS ${CMAKE_VERSION})
+    if ("3.11" VERSION_LESS ${CMAKE_VERSION})
         # Store previous values
         set(PREV_QUIET ${FETCHCONTENT_QUIET})
         set(PREV_UPDATE_DISCONNECTED ${FETCHCONTENT_UPDATE_DISCONNECTED})
