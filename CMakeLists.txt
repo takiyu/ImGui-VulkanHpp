@@ -45,12 +45,18 @@ list(APPEND IMGUIVKHPP_LIBRARY ${IMGUIVKHPP_EXTERNAL_LIBRARY})
 project(imgui_vkhpp CXX C)
 set(CMAKE_CXX_STANDARD 14)  # C++ 14
 
-# Include common configurations
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/common_setups.cmake)
+# Include CSC
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_scalable_conf.cmake)
 
 # ------------------------------------------------------------------------------
 # --------------------------- Third Party Libraries ----------------------------
 # ------------------------------------------------------------------------------
+# Version Tags
+set(VKW_TAG "a2885404f92dd8177d9a499e38902488269a5329")
+set(IMGUI_TAG "fa963b9aafde7f05b1d32d42e3d2b084c9685e31")
+set(GLM_TAG "66062497b104ca7c297321bd0e970869b1e6ece5")
+
+
 # Vulkan Wrapper
 if (IMGUIVKHPP_USE_INTERNAL_VKW)
     # Vulkan Wrapper
@@ -58,9 +64,8 @@ if (IMGUIVKHPP_USE_INTERNAL_VKW)
     set(VKW_BUILD_EXAMPLES OFF CACHE BOOL "")
     set(VKW_LINK_DYNAMIC_VK ON CACHE BOOL "")
     set(VKW_THIRD_PARTY_PATH ${IMGUIVKHPP_THIRD_PARTY_PATH} CACHE STRING "")
-    setup_third_party("https://github.com/takiyu/VulkanWrapper"
-                      "4579fc54916aac88899ab980eec20df769d25f96" TRUE
-                      ${IMGUIVKHPP_THIRD_PARTY_PATH})
+    csc_clone_third_party("https://github.com/takiyu/VulkanWrapper"
+                          ${VKW_TAG} TRUE ${IMGUIVKHPP_THIRD_PARTY_PATH})
     list(APPEND IMGUIVKHPP_INCLUDE ${VKW_INCLUDE})
     list(APPEND IMGUIVKHPP_LIBRARY ${VKW_LIBRARY})
     list(APPEND IMGUIVKHPP_DEFINE ${VKW_DEFINE})
@@ -69,9 +74,8 @@ endif()
 # ImGui
 if (IMGUIVKHPP_USE_INTERNAL_IMGUI)
     message(STATUS "Use internal ImGui")
-    setup_third_party("https://github.com/ocornut/imgui"
-                      "fa963b9aafde7f05b1d32d42e3d2b084c9685e31" FALSE
-                      ${IMGUIVKHPP_THIRD_PARTY_PATH})
+    csc_clone_third_party("https://github.com/ocornut/imgui"
+                          ${IMGUI_TAG} FALSE ${IMGUIVKHPP_THIRD_PARTY_PATH})
     set(IMGUI_PATH ${IMGUIVKHPP_THIRD_PARTY_PATH}/imgui)
     set(IMGUI_SOURCES ${IMGUI_PATH}/imgui.cpp
                       ${IMGUI_PATH}/imgui_draw.cpp
@@ -85,15 +89,14 @@ if (IMGUIVKHPP_USE_INTERNAL_IMGUI)
     add_library(imgui ${IMGUI_SOURCES})
     list(APPEND IMGUIVKHPP_INCLUDE ${IMGUI_PATH}
                                    ${IMGUI_PATH}/backends)
-    setup_target(imgui "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}" FALSE)
+    csc_setup_target(imgui "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}" FALSE)
     list(APPEND IMGUIVKHPP_LIBRARY imgui)
 endif()
 
 if (IMGUIVKHPP_BUILD_EXAMPLES)
     # GLM
-    setup_third_party("https://github.com/g-truc/glm"
-                      "66062497b104ca7c297321bd0e970869b1e6ece5" FALSE
-                      ${IMGUIVKHPP_THIRD_PARTY_PATH})
+    csc_clone_third_party("https://github.com/g-truc/glm"
+                          ${GLM_TAG} FALSE ${IMGUIVKHPP_THIRD_PARTY_PATH})
     list(APPEND IMGUIVKHPP_INCLUDEVKW_INCLUDE ${VKW_THIRD_PARTY_PATH}/glm)
 endif()
 
@@ -105,7 +108,7 @@ list(APPEND IMGUIVKHPP_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_library(imgui_vkhpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/imgui_impl_vulkanhpp.cpp
 )
-setup_target(imgui_vkhpp "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}" TRUE)
+csc_setup_target(imgui_vkhpp "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}" TRUE)
 add_definitions(${IMGUIVKHPP_DEFINE})
 list(APPEND IMGUIVKHPP_LIBRARY imgui_vkhpp)
 
@@ -125,14 +128,14 @@ if (IMGUIVKHPP_BUILD_EXAMPLES)
     # Standard GLFW example
     add_executable(main_glfw
                    ${CMAKE_CURRENT_SOURCE_DIR}/example/main_glfw.cpp)
-    setup_target(main_glfw
-                 "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}" TRUE)
+    csc_setup_target(main_glfw
+                     "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}" TRUE)
 
     # BG-mode GLFW example
     add_executable(main_glfw_bg
                    ${CMAKE_CURRENT_SOURCE_DIR}/example/main_glfw_bg.cpp)
-    setup_target(main_glfw_bg
-                 "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}" TRUE)
+    csc_setup_target(main_glfw_bg
+                     "${IMGUIVKHPP_INCLUDE}" "${IMGUIVKHPP_LIBRARY}" TRUE)
 endif()
 
 message(STATUS "--------------------------------------------------------------")
