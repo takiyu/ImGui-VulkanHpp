@@ -51,11 +51,12 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_scalable_conf.cmake)
 # ------------------------------------------------------------------------------
 # --------------------------- Third Party Libraries ----------------------------
 # ------------------------------------------------------------------------------
+list(APPEND VKW_INCLUDE ${VKW_THIRD_PARTY_PATH})
+
 # Version Tags
 set(VKW_TAG "a2885404f92dd8177d9a499e38902488269a5329")
 set(IMGUI_TAG "fa963b9aafde7f05b1d32d42e3d2b084c9685e31")
 set(GLM_TAG "66062497b104ca7c297321bd0e970869b1e6ece5")
-
 
 # Vulkan Wrapper
 if (IMGUIVKHPP_USE_INTERNAL_VKW)
@@ -97,7 +98,7 @@ if (IMGUIVKHPP_BUILD_EXAMPLES)
     # GLM
     csc_clone_third_party("https://github.com/g-truc/glm"
                           ${GLM_TAG} FALSE ${IMGUIVKHPP_THIRD_PARTY_PATH})
-    list(APPEND IMGUIVKHPP_INCLUDEVKW_INCLUDE ${VKW_THIRD_PARTY_PATH}/glm)
+    list(APPEND IMGUIVKHPP_INCLUDE ${VKW_THIRD_PARTY_PATH}/glm)
 endif()
 
 # ------------------------------------------------------------------------------
