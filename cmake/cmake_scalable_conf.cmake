@@ -19,7 +19,7 @@
 #   - 2022/03/18 Change project name
 #   - 2022/03/19 Add auto version update
 #
-message(STATUS "CSC (CMake Scalable Configurator) v1.1")
+message(STATUS "CSC (CMake Scalable Configurator) v1.2")
 set(CSC_VERSION_LOCAL 12)
 
 # Utility function to update this CSC script
